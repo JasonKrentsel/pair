@@ -2,102 +2,166 @@
   "name": "pi-pair",
   "displayName": "Pair for Pi",
   "description": "Review exact Pi proposals and approve steps inside your project in VS Code.",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "publisher": "local-pair",
   "license": "UNLICENSED",
-  "engines": { "vscode": "^1.96.0" },
-  "categories": ["Other"],
-  "main": "./extension.cjs",
-  "extensionKind": ["ui"],
-  "activationEvents": ["onStartupFinished", "onUri"],
-  "capabilities": {
-    "untrustedWorkspaces": { "supported": "limited", "description": "Review is available; approving or denying steps requires a trusted workspace." },
-    "virtualWorkspaces": { "supported": false }
+  "engines": {
+    "vscode": "^1.96.0"
   },
-  "devDependencies": {"@highlightjs/cdn-assets":"11.12.0","@xterm/addon-fit":"0.11.0","@xterm/xterm":"6.0.0"},
-  "scripts": { "test": "node --test tests/*.test.cjs" },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.cjs",
+  "extensionKind": [
+    "ui"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onUri"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Review is available; approving or denying steps requires a trusted workspace."
+    },
+    "virtualWorkspaces": {
+      "supported": false
+    }
+  },
+  "devDependencies": {
+    "@highlightjs/cdn-assets": "11.12.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.cjs"
+  },
   "contributes": {
-    "viewsContainers": { "activitybar": [{ "id": "pair", "title": "Pair", "icon": "media/pair.svg" }] },
-    "views": { "pair": [
-      { "id": "pair.review", "name": "Review", "type": "webview" },
-      { "id": "pair.changes", "name": "Step Actions" },
-      { "id": "pair.checkpoint", "name": "Checkpoint & Constraints", "type": "webview", "visibility": "collapsed" }
-    ] },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "pair",
+          "title": "Pair",
+          "icon": "media/pair.svg"
+        }
+      ]
+    },
+    "views": {
+      "pair": [
+        {
+          "id": "pair.review",
+          "name": "Step",
+          "type": "webview"
+        }
+      ]
+    },
     "commands": [
-      { "command": "pair.reviewDesk", "title": "Open Review Desk", "category": "Pair", "icon": "$(comment-discussion)" },
-      { "command": "pair.addAskFeedback", "title": "Ask About Selected Lines", "category": "Pair", "icon": "$(question)" },
-      { "command": "pair.addRevisionFeedback", "title": "Request Change to Selected Lines", "category": "Pair", "icon": "$(comment)" },
-      { "command": "pair.saveAskComment", "title": "Save question draft", "category": "Pair", "enablement": "!commentIsEmpty" },
-      { "command": "pair.saveRevisionComment", "title": "Save change request draft", "category": "Pair", "enablement": "!commentIsEmpty" },
-      { "command": "pair.editDraft", "title": "Edit draft", "category": "Pair", "icon": "$(edit)" },
-      { "command": "pair.removeDraft", "title": "Remove draft", "category": "Pair", "icon": "$(trash)" },
-      { "command": "pair.sendQuestion", "title": "Send question", "category": "Pair", "icon": "$(send)", "enablement": "pair.canSendFeedback" },
-      { "command": "pair.sendFeedback", "title": "Send Feedback Batch", "category": "Pair", "icon": "$(send)", "enablement": "pair.canSendFeedback" },
-      { "command": "pair.openFeedback", "title": "Open Anchored Feedback", "category": "Pair" },
-      { "command": "pair.addressFeedback", "title": "Mark Feedback Addressed", "category": "Pair" },
-      { "command": "pair.review", "title": "Open Review", "category": "Pair", "icon": "$(open-preview)" },
-      { "command": "pair.checkpoint", "title": "Open Checkpoint and Constraints", "category": "Pair", "icon": "$(list-unordered)" },
-      { "command": "pair.addConstraint", "title": "Add Constraint", "category": "Pair", "icon": "$(add)", "enablement": "pair.canEditConstraints" },
-      { "command": "pair.removeConstraint", "title": "Remove Constraint", "category": "Pair", "icon": "$(remove)", "enablement": "pair.canEditConstraints && pair.hasConstraints" },
-      { "command": "pair.approve", "title": "Approve Entire Step", "category": "Pair", "icon": "$(check)", "enablement": "pair.canApprove" },
-      { "command": "pair.deny", "title": "Deny Step", "category": "Pair", "icon": "$(close)", "enablement": "pair.canDecide" },
-      { "command": "pair.denyWithNote", "title": "Deny with Note", "category": "Pair", "icon": "$(comment)", "enablement": "pair.canDecide" },
-      { "command": "pair.openChange", "title": "Open Step Action", "category": "Pair" },
-      { "command": "pair.nextFile", "title": "Next Action in Step", "category": "Pair", "icon": "$(arrow-down)" },
-      { "command": "pair.previousFile", "title": "Previous Action in Step", "category": "Pair", "icon": "$(arrow-up)" },
-      { "command": "pair.selectSession", "title": "Select Pi Session", "category": "Pair", "icon": "$(plug)" },
-      { "command": "pair.refresh", "title": "Refresh Connection", "category": "Pair", "icon": "$(refresh)" }
+      {
+        "command": "pair.review",
+        "title": "Open Review",
+        "category": "Pair",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "pair.approve",
+        "title": "Approve Entire Step",
+        "category": "Pair",
+        "icon": "$(check)",
+        "enablement": "pair.canApprove"
+      },
+      {
+        "command": "pair.deny",
+        "title": "Deny Step",
+        "category": "Pair",
+        "icon": "$(close)",
+        "enablement": "pair.canDecide"
+      },
+      {
+        "command": "pair.denyWithNote",
+        "title": "Deny with Note",
+        "category": "Pair",
+        "icon": "$(comment)",
+        "enablement": "pair.canDecide"
+      },
+      {
+        "command": "pair.openChange",
+        "title": "Open Step Action",
+        "category": "Pair"
+      },
+      {
+        "command": "pair.nextFile",
+        "title": "Next Action in Step",
+        "category": "Pair",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "pair.previousFile",
+        "title": "Previous Action in Step",
+        "category": "Pair",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "pair.selectSession",
+        "title": "Select Pi Session",
+        "category": "Pair",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "pair.refresh",
+        "title": "Refresh Connection",
+        "category": "Pair",
+        "icon": "$(refresh)"
+      }
     ],
     "menus": {
       "view/title": [
-        { "command": "pair.reviewDesk", "when": "view == pair.review", "group": "navigation@1" },
-        { "command": "pair.selectSession", "when": "view == pair.review", "group": "navigation" },
-        { "command": "pair.checkpoint", "when": "view == pair.review", "group": "navigation" },
-        { "command": "pair.addConstraint", "when": "view == pair.checkpoint", "group": "navigation" },
-        { "command": "pair.removeConstraint", "when": "view == pair.checkpoint", "group": "navigation" },
-        { "command": "pair.refresh", "when": "view == pair.changes", "group": "navigation" },
-        { "command": "pair.approve", "when": "view == pair.changes && pair.canApprove", "group": "navigation" },
-        { "command": "pair.denyWithNote", "when": "view == pair.changes && pair.canDecide", "group": "navigation" },
-        { "command": "pair.deny", "when": "view == pair.changes && pair.canDecide", "group": "navigation" }
+        {
+          "command": "pair.selectSession",
+          "when": "view == pair.review",
+          "group": "navigation@1"
+        },
+        {
+          "command": "pair.refresh",
+          "when": "view == pair.review",
+          "group": "navigation@2"
+        }
       ],
       "editor/title": [
-        { "command": "pair.reviewDesk", "when": "resourceScheme == pair-review", "group": "navigation" },
-        { "command": "pair.review", "when": "resourceScheme == pair-review", "group": "navigation" },
-        { "command": "pair.previousFile", "when": "resourceScheme == pair-review", "group": "navigation" },
-        { "command": "pair.nextFile", "when": "resourceScheme == pair-review", "group": "navigation" },
-        { "command": "pair.approve", "when": "resourceScheme == pair-review && pair.canApprove", "group": "navigation" },
-        { "command": "pair.denyWithNote", "when": "resourceScheme == pair-review && pair.canDecide", "group": "navigation" }
-      ],
-      "editor/context": [
-        { "command": "pair.addAskFeedback", "when": "resourceScheme == pair-review", "group": "pair@1" },
-        { "command": "pair.addRevisionFeedback", "when": "resourceScheme == pair-review", "group": "pair@2" }
-      ],
-      "comments/commentThread/context": [
-        { "command": "pair.saveAskComment", "when": "commentController == pair && commentThreadIsEmpty", "group": "inline@1" },
-        { "command": "pair.saveRevisionComment", "when": "commentController == pair && commentThreadIsEmpty", "group": "inline@2" }
-      ],
-      "comments/comment/title": [
-        { "command": "pair.editDraft", "when": "commentController == pair && comment == pairDraftComment", "group": "inline" },
-        { "command": "pair.removeDraft", "when": "commentController == pair && comment == pairDraftComment", "group": "inline" }
-      ],
-      "comments/commentThread/title": [
-        { "command": "pair.sendQuestion", "when": "commentController == pair && commentThread == pairDraftQuestion", "group": "inline@1" },
-        { "command": "pair.reviewDesk", "when": "commentController == pair", "group": "inline" }
-      ],
-      "commandPalette": [
-        { "command": "pair.sendQuestion", "when": "false" },
-        { "command": "pair.saveAskComment", "when": "false" },
-        { "command": "pair.saveRevisionComment", "when": "false" },
-        { "command": "pair.editDraft", "when": "false" },
-        { "command": "pair.removeDraft", "when": "false" },
-        { "command": "pair.openFeedback", "when": "false" },
-        { "command": "pair.addressFeedback", "when": "false" }
+        {
+          "command": "pair.review",
+          "when": "resourceScheme == pair-review",
+          "group": "navigation"
+        },
+        {
+          "command": "pair.previousFile",
+          "when": "resourceScheme == pair-review",
+          "group": "navigation"
+        },
+        {
+          "command": "pair.nextFile",
+          "when": "resourceScheme == pair-review",
+          "group": "navigation"
+        },
+        {
+          "command": "pair.approve",
+          "when": "resourceScheme == pair-review && pair.canApprove",
+          "group": "navigation"
+        },
+        {
+          "command": "pair.denyWithNote",
+          "when": "resourceScheme == pair-review && pair.canDecide",
+          "group": "navigation"
+        }
       ]
     },
     "configuration": {
       "title": "Pair",
       "properties": {
-        "pair.openReviewAutomatically": { "type": "boolean", "default": true, "description": "Open the Pair review and first diff when a new pending proposal arrives in this workspace." }
+        "pair.openReviewAutomatically": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open the Pair review and first diff when a new pending proposal arrives in this workspace."
+        }
       }
     }
   }

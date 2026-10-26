@@ -1,4 +1,3 @@
-import type { WorkMemory } from "./checkpoint.ts";
 export type Phase = "design" | "design-approval" | "proposal" | "increment-approval" | "implement" | "review" | "paused";
 
 export interface FileSnapshot {
@@ -54,7 +53,6 @@ export interface PairState {
   increment?: Increment;
   pauseReason?: string;
   progress: string[];
-  memory?: WorkMemory;
 }
 
 export const STATE_ENTRY = "pair-state-v1";

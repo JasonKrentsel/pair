@@ -7,8 +7,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
-const { canonicalRoot, containedFile, discoverSessions, validRegistry, request, identity, sameReview, validReview, validMemory, associatedLanguage } = require('../client.cjs');
-const { renderCheckpointPanel } = require('../checkpoint-panel.cjs');
+const { canonicalRoot, containedFile, discoverSessions, validRegistry, request, identity, sameReview, validReview, associatedLanguage } = require('../client.cjs');
 
 test('workspace identity handles Windows case and separators without matching siblings', () => {
   assert.equal(canonicalRoot('C:\\Users\\Jason\\Project\\', 'win32'), canonicalRoot('c:/users/jason/project', 'win32'));
@@ -77,52 +76,8 @@ test('new-file language selection honors configured basename and relative path a
   assert.equal(associatedLanguage({ '*.ts': 'plaintext' }, path.join(root, 'src/a.ts'), root), 'plaintext');
 });
 
-test('checkpoint memory validates bounded fields and unique human constraints', () => {
-  const empty = { revision: 0, constraints: [] };
-  assert.equal(validMemory(empty), true);
-  assert.equal(validMemory(undefined), false, 'legacy absence is handled by the caller, not invented as live data');
-  const checkpoint = { objective: 'Resume a run', implemented: 'Checkpoint writes', verification: 'Focused tests pass', usable: 'Internal API only', deferred: 'CLI wiring', next: 'Read a saved run', revision: 1, updatedAt: '2026-10-26T00:00:00Z', stale: false };
-  const constraint = { id: 'human-1', text: 'Skip the full suite', scope: 'task', createdAt: '2026-10-26T00:00:00Z' };
-  const memory = { revision: 2, checkpoint, constraints: [constraint] };
-  assert.equal(validMemory(memory), true);
-  assert.equal(validMemory({ ...memory, revision: -1 }), false);
-  assert.equal(validMemory({ ...memory, checkpoint: { ...checkpoint, objective: 'x'.repeat(241) } }), false);
-  assert.equal(validMemory({ ...memory, checkpoint: { ...checkpoint, stale: 'false' } }), false);
-  assert.equal(validMemory({ ...memory, checkpoint: { ...checkpoint, next: undefined } }), false);
-  assert.equal(validMemory({ ...memory, constraints: [constraint, constraint] }), false);
-  assert.equal(validMemory({ ...memory, constraints: [{ ...constraint, scope: 'forever' }] }), false);
-  assert.equal(validMemory({ ...memory, constraints: [{ ...constraint, text: 'x'.repeat(301) }] }), false);
-  assert.equal(validMemory({ ...memory, constraints: [{ ...constraint, scope: 'turn', pendingTurn: true }] }), true);
-  assert.equal(validMemory({ ...memory, constraints: [{ ...constraint, scope: 'task', pendingTurn: true }] }), false);
-  assert.equal(validMemory({ ...memory, constraints: [{ ...constraint, pendingTurn: 'yes' }] }), false);
-});
-
-test('checkpoint panel distinguishes claims, stale verification, scope and safe text', () => {
-  const memory = { revision: 4, checkpoint: { objective: '<script>bad()</script>', implemented: 'Saved data', verification: 'Tests passed', usable: 'Internal API', deferred: 'CLI', next: 'Resume', revision: 2, updatedAt: '2026-10-26T00:00:00Z', stale: true },
-    constraints: [{ id: 'c1', text: 'No installation <please>', scope: 'turn', createdAt: '' }] };
-  const html = renderCheckpointPanel({ memory, sessionId: 'session-1', connected: true, trusted: true, busy: false, pending: true });
-  assert.match(html, /Verification · agent report/);
-  assert.match(html, /Verification needs a fresh report/);
-  assert.match(html, /Usable now/);
-  assert.match(html, /This turn/);
-  assert.match(html, /next human chat message/);
-  assert.match(html, /No installation &lt;please&gt;/);
-  assert.ok(!html.includes('<script>bad()</script>'));
-  assert.match(html, /grant no permission to execute/);
-  assert.match(html, /Changing constraints cancels the pending review/);
-  assert.match(html, /"sessionId":"session-1","revision":4/);
-  const unknown = renderCheckpointPanel({ connected: true, trusted: true });
-  assert.match(unknown, /does not provide checkpoint data yet/);
-  assert.equal((unknown.match(/Not recorded/g) || []).length, 6);
-  assert.match(unknown, /data-action="add" disabled/);
-  const disconnected = renderCheckpointPanel({ memory, sessionId: 'session-1', connected: false, trusted: true });
-  assert.match(disconnected, /data-action="remove" disabled/);
-  const queued = renderCheckpointPanel({ memory: { ...memory, constraints: [{ ...memory.constraints[0], pendingTurn: true }] }, sessionId: 'session-1', connected: true, trusted: true });
-  assert.match(queued, /<span class="scope">Next turn<\/span>/);
-});
-
-// Snapshot anchors survive a question; approval belongs to the newly armed gate.
-test('resumed question reviews preserve anchors but reject delayed approval identities', () => {
+// Decisions must match both the exact snapshot and its current permission gate.
+test('review gates reject delayed approval identities', () => {
   const { decisionIdentity, sameDecision } = require('../client.cjs');
   const original = { id: 'r', revision: 1, fingerprint: 'hash', gate: 1 };
   const oldDecision = decisionIdentity(original), resumed = { ...original, gate: 2 };

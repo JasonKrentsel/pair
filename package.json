@@ -1,10 +1,12 @@
 {
   "name": "pi-pair",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "description": "Collaborative design and incremental implementation for Pi",
   "type": "module",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "scripts": {
     "test": "node --import ./scripts/pi-runtime.mjs --test tests/*.test.ts",
     "test:vscode": "node --test vscode/tests/*.test.cjs",
@@ -13,8 +15,12 @@
     "capture": "node --import ./scripts/pi-runtime.mjs scripts/capture-fixtures.ts"
   },
   "pi": {
-    "extensions": ["./extensions/pair/index.ts"],
-    "skills": ["./skills"]
+    "extensions": [
+      "./extensions/pair/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "^1.4.0",
@@ -25,5 +31,7 @@
     "diff": "^8.0.4",
     "node-pty": "1.1.0"
   },
-  "engines": { "node": ">=22.19.0" }
+  "engines": {
+    "node": ">=22.19.0"
+  }
 }

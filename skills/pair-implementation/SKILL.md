@@ -1,6 +1,6 @@
 ---
 name: pair-implementation
-description: Implement understandable steps in Pi through explained, exact edit or command approvals. Use result cards for routine outcomes and concise checkpoints for progress, verification, and remaining decisions.
+description: Implement understandable steps in Pi through explained, exact edit or command approvals. Use result cards for routine outcomes and brief chat updates for meaningful milestones.
 ---
 
 # Pair Implementation
@@ -13,7 +13,7 @@ Read project instructions and enough source to resolve the next decision. Use na
 
 Use collaborative-design for consequential architecture or when requested. Small tasks need no design workflow. Give a brief progress update when investigation takes substantial time.
 
-Honor limits on tests, installation, execution, and external actions. Pinned constraints preserve human instructions and grant no execution permission. Current human instructions can supersede earlier limits. Acknowledge a superseded pin; the human controls adding or removing pins.
+Honor limits on tests, installation, execution, and external actions. Current human instructions can supersede earlier limits; ordinary discussion grants no execution permission.
 
 ## Propose one understandable step
 
@@ -44,15 +44,11 @@ Approval covers every displayed action in execution order, in Pi or VS Code. Fai
 
 A plain denial stops mutations for the turn. Interpret a denial note by its intent:
 
-- **Revise:** prepare a different proposal reflecting the feedback; it still needs approval.
+- **Revise:** prepare a different proposal reflecting the feedback, including its complete ordered action list; it still needs approval.
 - **Skip:** omit the requested action rather than proposing it again.
 - **Pause or explain:** discuss the question and wait before proposing further changes.
 
 Ask if consequentially unclear. Never repeat an unchanged denied proposal, bypass the guard, or treat a note as permission to execute. A skipped check remains skipped until the human changes that instruction.
-
-VS Code section comments arrive together when the human sends their batch. They identify the exact proposal, side, lines, and intent. For question-only feedback, answer through pair_work action feedback with replies [{threadId, text}]. After all answers are saved, follow its pair_step {resume: reviewId} instruction to restore the same step for approval; do not resend code or modify its actions. Asking or answering never authorizes execution. A question mixed with revision requests requires discussion and a corrected proposal instead of resuming the original. Answers may use concise Markdown. Only the human marks feedback addressed.
-
-For a batch requesting changes, revise only the affected proposed files using pair_step with revises set to the returned review ID and changes containing their replacements. Unchanged files and commands are retained locally, so do not copy them into another tool call. For a mixed step, replace only existing file entries through revises; changing commands, adding actions, or reordering requires a fresh complete step. File baselines are checked and the complete revised step needs fresh approval. Do not silently move an old comment to new lines. If the original file changed, read current files and prepare a fresh proposal. A mixed batch of questions and requests pauses changes until the human continues.
 
 After failure, inspect and explain the problem before proposing repair. Previous permission is spent. Preserve partial work and human changes.
 
@@ -62,12 +58,8 @@ Name the uncertainty a check addresses. Reuse existing test helpers, types, and 
 
 Start with relevant checks; rerun focused failing cases after repair. Shared behavior changes can justify broader regression coverage. Once relevant checks pass, repeat or broaden them only for new changes, failures, unresolved concerns, or a human request. Test commands still need permission; respect skipped checks and execution limits.
 
-## Leave a useful checkpoint
-
-At a coherent milestone, after verification changes, or when task direction changes, call pair_work with action checkpoint and a checkpoint object containing the fields that changed: objective, implemented, verification, usable, deferred, and next. Do not update it after every edit.
+## Report meaningful outcomes
 
 Distinguish what is usable now from what only exists or passes internal tests. Report actual checks and outcomes, skipped checks, and uncertainty. A focused pass does not turn an earlier full-suite failure into a full-suite pass. Refresh stale verification only after establishing current evidence.
-
-The checkpoint is an agent report, not approval or proof. The human pins constraints explicitly; they are never extracted automatically, and the agent cannot edit them. Task pins last until removed or new Pair work. A turn pin added during work expires at the next human chat turn; one added while idle covers the next human chat turn and expires at the following one. The shared Pi/VS Code panel is readable through /pair checkpoint; opening it is never a prerequisite for work.
 
 Speak for new decisions, failures, deviations, or short milestone summaries. Avoid repeating each result card or maintaining another progress document.

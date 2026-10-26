@@ -7,14 +7,13 @@ export async function reviewWithCompanion(
   bridge: PairReviewBridge | undefined, root: string, ctx: ExtensionContext,
   title: string, why: string, changes: ChangePreview[], signal: AbortSignal | undefined,
   options: PermissionViewOptions, validate: () => void, terminal = showPermission,
-  metadata?: { revises?: string; resume?: string; onPublished?: (review: BridgeReview) => void },
+  metadata?: { onPublished?: (review: BridgeReview) => void },
 ): Promise<PermissionDecision> {
   if (!bridge) return terminal(ctx, title, why, changes, signal, options);
   if (signal?.aborted) return { action: "deny" };
   try { await bridge.start(root); }
   catch {
     if (signal?.aborted) return { action: "deny" };
-    if (metadata?.resume) throw new Error("The question review connection is unavailable. Reconnect before resuming this step.");
     validate();
     ctx.ui.notify("VS Code connection unavailable. Review this change in Pi.", "warning");
     return terminal(ctx, title, why, changes, signal, options);
@@ -32,8 +31,7 @@ export async function reviewWithCompanion(
     resolveDecision(decision);
     closeTerminal.abort();
   };
-  const published = metadata?.resume ? bridge.resume(metadata.resume, onDecision, validate)
-    : bridge.publish({ title, why, changes, revises: metadata?.revises }, onDecision, validate);
+  const published = bridge.publish({ title, why, changes }, onDecision, validate);
   const gate = bridge.decisionVersion;
   try { metadata?.onPublished?.(published); }
   catch (error) { if (bridge.current?.id === published.id) bridge.cancel(); throw error; }

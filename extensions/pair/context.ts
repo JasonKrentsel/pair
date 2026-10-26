@@ -1,26 +1,24 @@
 import type { PairState } from "./state.ts";
-import { compactMemory, normalizeMemory } from "./checkpoint.ts";
 
 /** Stable guidance: UI state and renderer interactions never modify this prefix. */
 export const PAIR_CONTRACT = `Pair permissions are enabled.
 Investigate with read/grep/find/ls. Use pair_step for one coherent step: title, Markdown why, and 1–8 ordered edits/writes/commands across at most four files. Each action needs why; annotate consequential lines. Prefer localized edits. Supported routine Git inspection/setup runs directly. Design is optional and grants no execution permission.
 Honor chat design approval without asking again or republishing identical text. For approved specific changes, publish once and use pair_work approve_design.
-Approval covers the displayed step in order; failure stops remaining actions without rollback. Deny stops mutations. Notes: revise needs fresh approval; skip omits the action; explain means discuss first. Answer inline questions with pair_work feedback, then follow its reference-only pair_step resume instruction to restore approval. Questions never approve execution. Mixed question/revision feedback requires correction. Use revises for replacement files; retain other actions locally. Changed commands/order need a fresh full step. Never repeat rejected work or bypass the guard.
-Put explanations in the review; its card reports ordinary success. Give brief progress updates when needed. At milestones update pair_work checkpoint: implemented, verified, usable, deferred, next. Internal tests do not imply usable integration. Honor human constraints and chat limits; neither grants permission. Run purposeful checks; repeat only for new changes, failures, or a human request. See pair-implementation.`;
+Approval covers the displayed step in order; failure stops remaining actions without rollback. Deny stops mutations. Notes: revise needs fresh approval; skip omits the action; explain means discuss first. Revised proposals include the complete step and need fresh approval. Never repeat rejected work or bypass the guard.
+Put explanations in the review; its card reports ordinary success. Give brief progress updates when needed. Summarize meaningful milestones in chat. Internal tests do not imply usable integration. Honor the human’s current instructions and execution limits. Run purposeful checks; repeat only for new changes, failures, or a human request. See pair-implementation.`;
 
 export function conciseState(state: PairState): string {
   return [
     "Pair: step permissions enabled.",
     state.goal ? `Goal: ${state.goal}` : "",
     state.design.path ? `Design: ${state.design.path} (revision ${state.design.revision}, approved ${state.design.approvedRevision ?? "none"}).` : "Design: optional, none saved.",
-    !state.memory?.checkpoint && state.increment ? `Saved review: ${state.increment.title}; reference only, no execution grant.` : "",
-    !state.memory?.checkpoint && state.pauseReason ? `Saved review note: ${state.pauseReason}` : "",
-    state.memory ? compactMemory(normalizeMemory(state.memory)) : "",
+    state.increment ? `Saved review: ${state.increment.title}; reference only, no execution grant.` : "",
+    state.pauseReason ? `Saved review note: ${state.pauseReason}` : "",
   ].filter(Boolean).join("\n");
 }
 
 /** Model-facing tool receipts contain the outcome and current facts, not the rules. */
-export function pairWorkResult(state: PairState, action: "status" | "revise" | "design" | "approve_design" | "checkpoint", target?: "design" | "increment"): string {
+export function pairWorkResult(state: PairState, action: "status" | "revise" | "design" | "approve_design", target?: "design" | "increment"): string {
   const brief = (value: string, limit = 180) => {
     const line = value.replace(/\s+/g, " ").trim();
     return line.length <= limit ? line : line.slice(0, limit - 1) + "…";
@@ -31,7 +29,6 @@ export function pairWorkResult(state: PairState, action: "status" | "revise" | "
     ? `Design: ${state.design.path} · revision ${state.design.revision} · ${approval}.`
     : "Design: none saved.";
   if (action === "design") return `Design published.\n${design}`;
-  if (action === "checkpoint") return `Checkpoint ${state.memory?.checkpoint?.revision ?? 0} saved. Human constraints unchanged.`;
   if (action === "approve_design") return `Design approval recorded.\n${design}`;
   if (action === "revise") {
     return target === "increment"
@@ -44,7 +41,6 @@ export function pairWorkResult(state: PairState, action: "status" | "revise" | "
     design,
     state.increment ? `Saved review: ${brief(state.increment.title)} (reference only).` : "",
     state.pauseReason ? `Saved review note: ${brief(state.pauseReason, 240)}` : "",
-    state.memory ? compactMemory(normalizeMemory(state.memory)) : "",
   ].filter(Boolean).join("\n");
 }
 

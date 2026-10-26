@@ -4,7 +4,7 @@ const review=()=>({id:'r',title:'Check configuration',why:'Verify before editing
 test('center command layout dedicates remaining editor height to output with no execution controls',()=>{
  const html=renderCommandCenter(review(),0,'C:/project',undefined,true);
  assert.match(html,/Command output/);assert.match(html,/flex:1;min-height:0;max-height:none/);
- assert.match(html,/Open source \/ inline feedback/);assert.match(html,/This command has not run/);
+ assert.match(html,/Open command source/);assert.match(html,/This command has not run/);
  assert.doesNotMatch(html,/data-action="approve"/);
  const hostile=review();hostile.changes[0].command='</code><img src=x onerror=alert(1)>';
  assert.ok(!renderCommandCenter(hostile,0,'C:/project',undefined,true).includes('<img'));

@@ -92,28 +92,6 @@ function validReview(value) {
       && (change.annotations === undefined || Array.isArray(change.annotations) && change.annotations.length <= 8 && change.annotations.every(note => note && typeof note.title === 'string' && typeof note.why === 'string' && Number.isInteger(note.startLine) && Number.isInteger(note.endLine) && note.startLine >= 1 && note.endLine >= note.startLine)));
 }
 
-function validMemory(value) {
-  if (!value || typeof value !== 'object' || !Number.isSafeInteger(value.revision) || value.revision < 0
-    || !Array.isArray(value.constraints) || value.constraints.length > 12) return false;
-  const ids = new Set();
-  for (const constraint of value.constraints) {
-    if (!constraint || typeof constraint.id !== 'string' || !constraint.id || ids.has(constraint.id)
-      || typeof constraint.text !== 'string' || !constraint.text.trim() || constraint.text.length > 300
-      || !['task', 'turn'].includes(constraint.scope) || typeof constraint.createdAt !== 'string'
-      || constraint.pendingTurn !== undefined && (typeof constraint.pendingTurn !== 'boolean' || constraint.scope !== 'turn')) return false;
-    ids.add(constraint.id);
-  }
-  if (value.checkpoint !== undefined) {
-    const checkpoint = value.checkpoint;
-    if (!checkpoint || !Number.isSafeInteger(checkpoint.revision) || checkpoint.revision < 1
-      || typeof checkpoint.updatedAt !== 'string' || typeof checkpoint.stale !== 'boolean') return false;
-    for (const [field, limit] of Object.entries({ objective: 240, implemented: 600, verification: 600, usable: 600, deferred: 600, next: 300 })) {
-      if (typeof checkpoint[field] !== 'string' || checkpoint[field].length > limit) return false;
-    }
-  }
-  return true;
-}
-
 function identity(review) {
   return review && { reviewId: review.id, revision: review.revision, fingerprint: review.fingerprint };
 }
@@ -148,4 +126,4 @@ function associatedLanguage(associations, filename, root) {
   return best?.language;
 }
 
-module.exports = { canonicalRoot, containedFile, registryDirectory, validRegistry, discoverSessions, request, validReview, validMemory, identity, sameReview, decisionIdentity, sameDecision, associatedLanguage };
+module.exports = { canonicalRoot, containedFile, registryDirectory, validRegistry, discoverSessions, request, validReview, identity, sameReview, decisionIdentity, sameDecision, associatedLanguage };

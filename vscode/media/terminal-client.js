@@ -15,7 +15,8 @@ function pump(){
   if(writing||!pending)return;
   const p=pending;pending=undefined;
   stateLabel.textContent='Output · '+p.status;
-  notice.textContent=p.truncated?'Showing a bounded output tail · earlier output is in the tool result':p.status==='Not run'?'Command preview · nothing has executed':'Live output from the approved command';
+  const caption=p.status==='Not run'?'Command preview · nothing has executed':p.status==='Running'?'Live output from the approved command':'Recorded output from the approved command';
+  notice.textContent=caption+(p.truncated?' · showing a bounded tail; earlier output is in the tool result':'');
   const next=p.raw??p.text??'',append=next.startsWith(previous),offset=term.buffer.active.viewportY;
   writing=true;
   if(!append)term.reset();

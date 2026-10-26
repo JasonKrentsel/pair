@@ -23,11 +23,7 @@ node --import ./scripts/pi-runtime.mjs scripts/replay-session.ts path/to/session
 
 ## Repeatable checks
 
-Version 0.4.0 adds checkpoint and constraint regressions under `tests/checkpoint*.test.ts` and companion coverage under `vscode/`. Run `npm test`, `npm run test:vscode`, and the TypeScript check after integration. Coverage includes legacy state, bounded agent reports, human-only constraint changes, active/idle turn lifetimes, queued-input provenance, task reset, stale verification, unchanged approval boundaries, revision-bound bridge mutations, and avoiding repeated context on unchanged agent starts. Test completion is separate from an agent's checkpoint claiming that checks passed.
-
-For visual review, capture both the empty and populated checkpoint panel in Pi and VS Code. Include a stale report, long verification text, task and turn pins, and enough constraints to scroll. Inspect at 80×24, 110×36, and 160×45, then resize with the reader open. Final content and Close/Add/Remove controls must remain reachable; tiny viewports must suppress unavailable actions. Verify that labels say agent-reported, distinguish usable behavior from test coverage, and explain whether a turn pin covers this turn or the next. UI navigation must not start model work or grant permission.
-
-In an isolated session, pin a constraint while a proposal is pending and confirm that the old decision becomes unavailable in both interfaces. Check that a constraint added while idle survives the next real human chat turn and expires at the following one, while an active-turn pin expires at the next human turn. Reload the session, switch sessions, and start new Pair work to check that saved facts and their lifetimes stay accurate. Record screenshots with the source revision, native application, dimensions, font, theme, and state; do not describe component renders as native captures.
+The retired checkpoint/constraint and inline Q&A features are no longer included. Current regression coverage verifies that legacy records cannot restore approvals or add their old recovery prompts.
 
 Version 0.3 adds authenticated bridge and companion checks. `npm test` includes
 exactly-once decisions across both interfaces, stale snapshots, denied requests,
@@ -128,12 +124,10 @@ Screenshots establish appearance. Execution tests separately establish denial,
 exact reviewed content, stale-file rejection, partial-failure stopping, and
 preservation of restrictions across compaction.
 
-## Inline review and Review Desk (0.5.0)
+## Sidebar simplification (0.9.0)
 
-The 0.5.0 release was checked in a real VS Code 1.143.1 extension host on Windows, loading the packaged VSIX in an isolated profile with the primary sidebar on the right. The native run passed 23 checks: language modes, comment ranges and distinct intents, local drafts, one feedback submission, Pi replies, preserved anchors, targeted revision comparisons, stale/exact approvals, unchanged editor selection, and the checkpoint panel. No fixture source file was changed by feedback.
+Capture the packaged companion in a real VS Code extension host, with an isolated profile and the sidebar on the right. Cover connected idle, pending mixed actions, long paths and rationale, running interactive commands, completed/denied steps and disconnection. Check narrow and normal widths and scroll to the last action: the decision footer must remain available.
 
-Actual window captures at 1444 × 901 were inspected for inline draft labels, the editor-tab Review Desk, answered threads, and right-sidebar scrolling. This exposed two layout defects that were fixed before packaging: draft intent was not visible in native comment labels, and feedback controls were below the explanation. The final controls remain visible while scrolling; old proposals' explanatory annotations no longer repeat in the native Comments panel.
+There is one review view and no duplicate action tree, Review Desk, inline Q&A or checkpoint view. Exact approval, stale decisions, dirty buffers, native diff language modes, ordered mixed execution and interactive input remain behavior checks. Expansion and scroll restoration must stay local; unchanged polling and terminal chunks must not rebuild the sidebar or add model context.
 
-The release also passed 135 Pi tests, 22 companion tests, and TypeScript 6.0.3 checking. Cache tests compare the actual registered tool metadata and system prefix across restore, repeated turns, and local thread-state updates. Recovery is bounded and emitted once; full snapshots stay out of model-facing content. This verifies input stability, not provider cache-hit rates.
-
-For future changes, repeat the native packaged run with draft, submitted, answered, revised, addressed, outdated, and disconnected states. Inspect screenshots after any layout fix, including a narrow right sidebar and a scrolled review. Keep approval scope, feedback intent, and the difference between a local draft and a submitted comment visible. Do not substitute a browser mockup for the native editor check.
+Record actual screenshots with theme, font, dimensions and test stage. Inspect each capture, identify a specific defect, fix it and recapture before accepting the UI.
