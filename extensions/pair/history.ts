@@ -36,6 +36,7 @@ function normalizeChanges(value: unknown): ChangePreview[] {
     for (const key of ["diff", "before", "after", "text", "command", "cwd", "status", "why"] as const) {
       if (typeof item[key] === "string") change[key] = item[key];
     }
+    if (item.interactive === true) change.interactive = true;
     if (Array.isArray(item.annotations)) change.annotations = item.annotations.slice(0, 6).flatMap(value => {
       const note = record(value);
       return note && typeof note.title === "string" && typeof note.why === "string" && Number.isSafeInteger(note.startLine) && Number.isSafeInteger(note.endLine)

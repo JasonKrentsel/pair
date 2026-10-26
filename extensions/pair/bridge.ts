@@ -81,6 +81,29 @@ export class PairReviewBridge {
   private validate?: () => void;
   private sequence = 0;
   private commandProgress: CommandProgress[] = [];
+  private terminal?: { reviewId:string; index:number; runId:string; cols:number; rows:number };
+  private terminalHandlers?: { input:(text:string)=>void; resize:(cols:number,rows:number)=>void; stop:()=>void };
+  private inputSequence=0;
+  private companionSeen=0;
+  get companionConnected(){return Date.now()-this.companionSeen<10000;}
+  get terminalState(){return this.terminal && {...this.terminal,inputSequence:this.inputSequence};}
+  beginTerminal(value: NonNullable<PairReviewBridge["terminal"]>, handlers: NonNullable<PairReviewBridge["terminalHandlers"]>){
+    if(this.review?.id!==value.reviewId || this.review.pending)throw new Error("Terminal approval expired.");
+    this.terminalHandlers?.stop();this.terminal=value;this.terminalHandlers=handlers;this.inputSequence=0;this.sequence++;
+  }
+  endTerminal(runId:string){if(this.terminal?.runId===runId){this.terminal=undefined;this.terminalHandlers=undefined;this.sequence++;}}
+  terminalAction(body:unknown){
+    if(!body || typeof body!=="object")throw new Error("Choose a current terminal action.");
+    const b=body as Record<string,unknown>, t=this.terminal, h=this.terminalHandlers;
+    if(!t||!h||b.runId!==t.runId||b.reviewId!==t.reviewId||b.index!==t.index||this.review?.id!==t.reviewId)throw new Error("That terminal is no longer running.");
+    if(b.action==="input"){
+      if(typeof b.text!=="string"||b.text.length>4096||b.sequence!==this.inputSequence+1)throw new Error("Terminal input is stale or too large. Reopen the command.");
+      this.inputSequence++;h.input(b.text);
+    }else if(b.action==="resize"){
+      if(!Number.isInteger(b.cols)||!Number.isInteger(b.rows)||(b.cols as number)<20||(b.cols as number)>400||(b.rows as number)<5||(b.rows as number)>150)throw new Error("Invalid terminal size.");
+      t.cols=b.cols as number;t.rows=b.rows as number;h.resize(t.cols,t.rows);
+    }else if(b.action==="stop")h.stop();else throw new Error("Unknown terminal action.");
+  }
   private gate = 0;
   private suspended?: { reviewId: string; threadIds: string[] };
   private lifecycle: Promise<void> = Promise.resolve();
@@ -97,7 +120,7 @@ export class PairReviewBridge {
     if (this.review?.id !== reviewId || this.review.pending || !this.review.changes[index]?.command) return;
     const next = { reviewId, index, status, ...outputTail(text) };
     const previous = this.commandProgress.find(item => item.index === index);
-    if (previous?.status === status && previous.text === next.text && previous.truncated === next.truncated) return;
+    if (previous?.status === status && previous.text === next.text && previous.truncated === next.truncated && previous.raw === next.raw) return;
     this.commandProgress = [...this.commandProgress.filter(item => item.index !== index), next].sort((a, b) => a.index - b.index);
     // Ephemeral output must not revise approved snapshots or append feedback events.
     this.sequence++;
@@ -266,6 +289,7 @@ export class PairReviewBridge {
   }
 
   cancel(): void {
+    this.terminalHandlers?.stop();
     if (this.commandProgress.length) { this.commandProgress = []; this.sequence++; }
     if (this.suspended) { this.suspended = undefined; this.update("Cancelled"); }
     if (!this.review?.pending) return;
@@ -284,6 +308,7 @@ export class PairReviewBridge {
     const server = this.server;
     this.server = undefined;
     this.registry = undefined;
+    this.companionSeen=0;
     this.review = undefined;
     this.focus = undefined;
     this.onDecision = undefined;
@@ -311,15 +336,16 @@ export class PairReviewBridge {
     }
     const path = request.url;
     if (request.method === "GET" && (path === "/review" || path === "/status")) {
+      if(path==="/review")this.companionSeen=Date.now();
       const etag = `"${registry.sessionId}:${this.sequence}"`;
       response.setHeader("ETag", etag);
       if (request.headers["if-none-match"] === etag) return this.send(response, 304);
       const review = this.current;
       const summary = review && { id: review.id, revision: review.revision, fingerprint: review.fingerprint, gate: review.gate, title: review.title, why: review.why, status: review.status, pending: review.pending };
       const memory = this.memoryHandlers?.read(registry.root);
-      return this.send(response, 200, { version: 1, sessionId: registry.sessionId, root: registry.root, review: (path === "/status" ? summary : review) ?? null, memory: memory ?? null, feedback: this.feedback, progress: this.progress, ...(this.focus ? { focus: this.focus } : {}) });
+      return this.send(response, 200, { version: 1, sessionId: registry.sessionId, root: registry.root, review: (path === "/status" ? summary : review) ?? null, memory: memory ?? null, feedback: this.feedback, progress: this.progress, terminal: this.terminalState ?? null, ...(this.focus ? { focus: this.focus } : {}) });
     }
-    if (!["/decision", "/memory", "/feedback", "/feedback-state"].includes(path ?? "")) { request.resume(); return this.send(response, 404, { error: "Unknown Pair review endpoint." }); }
+    if (!["/decision", "/memory", "/feedback", "/feedback-state", "/terminal"].includes(path ?? "")) { request.resume(); return this.send(response, 404, { error: "Unknown Pair review endpoint." }); }
     if (request.method !== "POST") { request.resume(); return this.send(response, 405, { error: "Use POST for a review decision." }); }
     if (!/^application\/json(?:\s*;|$)/i.test(request.headers["content-type"] ?? "")) {
       request.resume();
@@ -336,6 +362,10 @@ export class PairReviewBridge {
       }
       // A session may have closed while the request body was arriving.
       if (this.registry !== registry) return this.send(response, 409, { error: "The Pi session changed. Reconnect before responding." });
+      if (path === "/terminal") {
+        try{this.terminalAction(JSON.parse(Buffer.concat(chunks).toString("utf8")));return this.send(response,200,{ok:true});}
+        catch(error){return this.send(response,409,{error:(error as Error).message});}
+      }
       if (path === "/feedback" || path === "/feedback-state") {
         let body: unknown;
         try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); }

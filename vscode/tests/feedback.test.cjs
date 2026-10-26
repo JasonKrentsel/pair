@@ -132,7 +132,7 @@ test('only the current proposal contributes explanation threads; archived human 
   const f = fixture();
   try {
     const draft = await f.controller.addFeedback('revise', { ...f.makeDocument(), text: 'Validate empty strings.' });
-    assert.equal(f.native.filter(thread => !thread.disposed && thread.contextValue === 'pairExplanation').length, 2);
+    assert.equal(f.native.filter(thread => !thread.disposed && thread.contextValue === 'pairExplanation').length, 1);
     f.state.review = proposal({ id: 'next-review', revision: 2, fingerprint: 'b'.repeat(64) }); f.controller.sync();
     assert.equal(f.native.filter(thread => !thread.disposed && thread.contextValue === 'pairExplanation').length, 0);
     assert.ok(f.native.some(thread => !thread.disposed && thread.pairId === draft.id));
@@ -225,18 +225,8 @@ test('Review Desk shows the proposal before any comments and distinguishes compl
   assert.match(disconnected, /data-action="refresh">Reconnect/);
 });
 
-test('proposals without per-file explanations still show a clearly labeled expanded overview inline', () => {
-  const f = fixture();
-  try {
-    delete f.state.review.changes[0].why;
-    delete f.state.review.changes[0].annotations;
-    f.makeDocument();
-    const overview = f.native.find(thread => /whole proposal/.test(thread.label));
-    assert.ok(overview);
-    assert.equal(overview.comments[0].body.value, f.state.review.why);
-    assert.equal(overview.collapsibleState, f.vscode.CommentThreadCollapsibleState.Expanded);
-    assert.equal(f.requests.length, 0);
-  } finally { f.close(); }
+test('general file rationale does not insert an expanded comment at line one',()=>{
+ const f=fixture();try{delete f.state.review.changes[0].annotations;f.makeDocument(f.state.review,0,'proposed');assert.equal(f.native.filter(t=>t.contextValue==='pairExplanation').length,0);}finally{f.close();}
 });
 
 test('sending one inline question preserves other drafts and retries the exact question', async () => {
@@ -323,10 +313,10 @@ test('command snapshots expose anchored explanations and support inline question
     f.state.review.changes = [{ label: 'npm run check', kind: 'bash', command: 'npm run check\nnpm run lint', why: 'Check types and style before packaging.', annotations: [{ title: 'Check style', why: 'Lint runs only after type checking.', startLine: 2, endLine: 2 }] }];
     const doc = f.makeDocument(f.state.review, 0, 'command');
     const explanations = f.native.filter(thread => thread.contextValue === 'pairExplanation');
-    assert.equal(explanations.length, 2);
-    assert.equal(explanations[0].label, 'Why this command runs');
-    assert.equal(explanations[0].comments[0].body.value, 'Check types and style before packaging.');
-    assert.equal(explanations[1].range.start.line, 1);
+    assert.equal(explanations.length, 1);
+    assert.equal(explanations[0].label, 'Check style');
+    assert.equal(explanations[0].range.start.line, 1);
+    assert.equal(explanations[0].collapsibleState, f.vscode.CommentThreadCollapsibleState.Collapsed);
     const draft = await f.controller.addFeedback('ask', { ...doc, text: 'Why both checks?' });
     assert.equal(draft.side, 'command');
     assert.equal(draft.excerpt, 'npm run lint');
@@ -335,4 +325,13 @@ test('command snapshots expose anchored explanations and support inline question
     assert.equal(f.requests[0][3].comments[0].side, 'command');
     assert.equal(f.requests[0][3].comments[0].startLine, 2);
   } finally { f.close(); }
+});
+
+test('section explanations trim blank edges, combine duplicate anchors and remain collapsed',()=>{
+ const f=fixture();try{
+  const change=f.state.review.changes[0];change.after='\nfunction run() {\n\n  return 1;\n\n}\n';
+  change.annotations=[{title:'Return',why:'Use one.',startLine:3,endLine:5},{title:'Same section',why:'Keep this explicit.',startLine:4,endLine:4},{title:'Blank',why:'Skip',startLine:1,endLine:1}];
+  f.makeDocument(f.state.review,0,'proposed');const notes=f.native.filter(t=>t.contextValue==='pairExplanation');
+  assert.equal(notes.length,1);assert.equal(notes[0].range.start.line,3);assert.equal(notes[0].range.start.character,2);assert.equal(notes[0].range.end.character,11);assert.equal(notes[0].comments.length,2);assert.equal(notes[0].collapsibleState,0);
+ }finally{f.close();}
 });

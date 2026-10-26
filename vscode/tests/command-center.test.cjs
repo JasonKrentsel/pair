@@ -28,3 +28,19 @@ test('center streams update in place, reveal once, preserve source anchors and i
  state={...state,sessionId:'s',progress:[{reviewId:'r',index:0,status:'Running',text:'later',truncated:false}]};closed();controller.sync();
  assert.equal(created,1,'closed viewer must not reopen every poll');
 });
+
+test('interactive input resumes server sequence, chunks paste and rejects stale runs',async()=>{
+ const state={sessionId:'s',root:'C:/project',review:review(),progress:[],connected:true,terminal:{reviewId:'r',index:0,runId:'run-1',inputSequence:4}};
+ let receive;const sent=[],errors=[];
+ const panel={webview:{html:'',postMessage(m){if(m.type==='terminal-error')errors.push(m.text);return Promise.resolve(true);},onDidReceiveMessage(fn){receive=fn;}},reveal(){},onDidDispose(){},dispose(){}};
+ const controller=createCommandCenter({ViewColumn:{Active:1},workspace:{isTrusted:true},window:{createWebviewPanel:()=>panel}},{subscriptions:[]},{getState:()=>state,sendTerminal:async m=>sent.push(m),showError:()=>{},openNative:async()=>{}});
+ controller.open(state.review,0);
+ receive({action:'terminal',kind:'input',runId:'run-1',text:'x'.repeat(5000)});
+ await new Promise(r=>setTimeout(r,10));assert.equal(sent.length,2);assert.equal(sent[0].sequence,5);assert.equal(sent[1].sequence,6);assert.equal(sent[0].text.length,4096);
+ receive({action:'terminal',kind:'input',runId:'old',text:'wrong'});await new Promise(r=>setTimeout(r,10));assert.equal(sent.length,2);assert.match(errors[0],/no longer active/);
+});
+test('terminal asset page keeps raw output inert in its initialization script',()=>{
+ const assets=Object.fromEntries(['vendor/xterm.js','vendor/xterm.css','vendor/addon-fit.js','vendor/highlight.js','vendor/powershell.js','terminal-client.js'].map(name=>[name,'https://local.invalid/'+name]));assets.csp='https://local.invalid';
+ const html=renderCommandCenter(review(),0,'C:/project',{status:'Running',text:'</script><img src=x>',raw:'</script><img src=x>',truncated:false},true,assets);
+ assert.ok(!html.includes('</script><img'));assert.match(html,/id="command-code"/);assert.match(html,/vendor\/xterm.js/);
+});

@@ -23,6 +23,7 @@ function activate(context) {
   let memory;
   let feedback;
   let progress = [];
+  let terminal;
   let commandCenter;
   let feedbackController;
   let connected = false;
@@ -59,7 +60,7 @@ function activate(context) {
   const canDecide = () => connected && !busy && !memoryBusy && matchesWorkspace(selected) && review?.pending && vscode.workspace.isTrusted;
   const canApprove = () => canDecide() && !dirtyFiles().length && !alteredSnapshots().length && !feedbackController?.blocksApproval();
   const canEditMemory = () => connected && !busy && !memoryBusy && matchesWorkspace(selected) && memory !== undefined && vscode.workspace.isTrusted;
-  const liveState = () => ({ sessionId: selected?.sessionId, root: selected?.root, connected, review, memory, feedback, progress, connectionError: errorMessage });
+  const liveState = () => ({ sessionId: selected?.sessionId, root: selected?.root, connected, review, memory, feedback, progress, terminal, connectionError: errorMessage });
   const state = () => structuredClone(liveState());
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 15);
   status.command = 'pair.review';
@@ -115,7 +116,7 @@ function activate(context) {
     const actions = review?.changes.map((change, index) => {
       const command = change.command !== undefined;
       const label = command ? 'Open command & output' : change.label;
-      return `<li class="step-action"><div class="action-heading"><span class="action-number">${index + 1}</span><div><div class="muted">${escape(change.kind)}${command ? '' : ' · +' + (change.added || 0) + ' −' + (change.removed || 0)}${change.status ? ' · ' + escape(change.status) : ''}</div><button class="action-link" data-action="open-action" data-index="${index}">${escape(label)}</button></div></div>${change.why ? '<div class="action-why">' + markdown(change.why) + '</div>' : ''}</li>`;
+      return `<li class="step-action"><div class="action-heading"><span class="action-number">${index + 1}</span><div><div class="muted">${escape(change.kind)}${change.interactive ? ' · Interactive' : ''}${command ? '' : ' · +' + (change.added || 0) + ' −' + (change.removed || 0)}${change.status ? ' · ' + escape(change.status) : ''}</div><button class="action-link" data-action="open-action" data-index="${index}">${escape(label)}</button></div></div>${change.why ? '<div class="action-why">' + markdown(change.why) + '</div>' : ''}</li>`;
     }).join('') || '';
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"><meta name="viewport" content="width=device-width,initial-scale=1"><style nonce="${nonce}">
       h3{font-size:1em;font-weight:600;margin:14px 0 6px}.feedback-summary{margin:20px 0 14px;padding-top:8px;border-top:1px solid var(--vscode-panel-border)}.draft{padding:8px 0;border-bottom:1px solid var(--vscode-panel-border)}.draft p{margin:4px 0;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.why p{margin:6px 0}.why ul{padding-left:20px}.why code{font-family:var(--vscode-editor-font-family);background:var(--vscode-textCodeBlock-background)}
@@ -238,6 +239,7 @@ function activate(context) {
             || (value.feedback != null && !validFeedback(value.feedback))) throw new Error('Pair returned a review for a different session or an unsupported format.');
           review = value.review || undefined;
           progress = validProgress(value.progress, review) ? value.progress : [];
+          terminal = value.terminal && value.terminal.reviewId === review?.id && Number.isInteger(value.terminal.index) && review.changes[value.terminal.index]?.interactive && typeof value.terminal.runId === 'string' ? value.terminal : undefined;
           memory = value.memory || undefined;
           feedback = value.feedback || undefined;
           etag = result.etag;
@@ -476,7 +478,7 @@ function activate(context) {
   const register = (name, callback) => context.subscriptions.push(vscode.commands.registerCommand(name, async (...args) => {
     try { return await callback(...args); } catch (error) { showError(error); throw error; }
   }));
-  commandCenter = createCommandCenter(vscode, context, { getState: liveState, openNative: (snapshot,index) => openSnapshot(snapshot,index,{native:true}), showError });
+  commandCenter = createCommandCenter(vscode, context, { getState: liveState, sendTerminal: body => { if(!selected || !connected || !matchesWorkspace(selected) || !vscode.workspace.isTrusted)throw new Error('Reconnect to the trusted Pi workspace.'); return request({...selected},'POST','/terminal',body); }, openNative: (snapshot,index) => openSnapshot(snapshot,index,{native:true}), showError });
   feedbackController = createFeedbackController(vscode, context, { getState: liveState, getSession: () => selected && { ...selected }, matchesWorkspace: () => matchesWorkspace(selected), request,
     refresh: () => refresh(true), onChanged: update, alteredSnapshots, openSnapshot, openCurrent: openChange, chooseSession, showError });
   register('pair.reviewDesk', () => feedbackController.openDesk());

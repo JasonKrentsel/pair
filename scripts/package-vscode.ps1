@@ -26,9 +26,9 @@ $vsixManifest = @"
 "@
 $contentTypes = @'
 <?xml version="1.0" encoding="utf-8"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="json" ContentType="application/json" /><Default Extension="cjs" ContentType="application/javascript" /><Default Extension="md" ContentType="text/markdown" /><Default Extension="svg" ContentType="image/svg+xml" /><Default Extension="vsixmanifest" ContentType="text/xml" /></Types>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="json" ContentType="application/json" /><Default Extension="cjs" ContentType="application/javascript" /><Default Extension="js" ContentType="application/javascript" /><Default Extension="css" ContentType="text/css" /><Default Extension="txt" ContentType="text/plain" /><Default Extension="md" ContentType="text/markdown" /><Default Extension="svg" ContentType="image/svg+xml" /><Default Extension="vsixmanifest" ContentType="text/xml" /></Types>
 '@
-# A small dependency-free local VSIX; never includes tests, tokens, or node_modules.
+# Local VSIX with pinned browser assets; never includes tests, tokens, or node_modules.
 $stream = [IO.File]::Open($Destination, [IO.FileMode]::Create, [IO.FileAccess]::Write)
 $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create)
 try {
@@ -37,7 +37,7 @@ try {
     $writer = [IO.StreamWriter]::new($entry.Open(), [Text.UTF8Encoding]::new($false))
     try { $writer.Write($item[1]) } finally { $writer.Dispose() }
   }
-  foreach ($file in @('package.json', 'extension.cjs', 'client.cjs', 'command-view.cjs', 'command-center.cjs', 'checkpoint-panel.cjs', 'feedback-model.cjs', 'feedback-ui.cjs', 'feedback-controller.cjs', 'README.md', 'media/pair.svg')) {
+  foreach ($file in @('package.json', 'extension.cjs', 'client.cjs', 'command-view.cjs', 'command-center.cjs', 'checkpoint-panel.cjs', 'feedback-model.cjs', 'feedback-ui.cjs', 'feedback-controller.cjs', 'README.md', 'media/pair.svg', 'media/terminal-client.js', 'media/vendor/xterm.js', 'media/vendor/xterm.css', 'media/vendor/addon-fit.js', 'media/vendor/highlight.js', 'media/vendor/powershell.js', 'media/vendor/licenses.txt')) {
     [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, (Join-Path $extensionRoot $file), "extension/$file") | Out-Null
   }
 } finally { $archive.Dispose(); $stream.Dispose() }

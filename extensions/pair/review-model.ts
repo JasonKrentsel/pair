@@ -10,6 +10,7 @@ export interface ChangePreview {
   after?: string;
   text?: string;
   command?: string;
+  interactive?: boolean;
   cwd?: string;
   added: number;
   removed: number;

@@ -1,4 +1,5 @@
 import { type AgentToolResult, type ExtensionAPI, type ExtensionContext, type ToolCallEvent } from "@earendil-works/pi-coding-agent";
+import { registerInteractiveTerminal } from "./interactive-terminal.ts";
 import { outputTail } from "./command-output.ts";
 import { Type } from "typebox";
 import { snapshot, projectRoot } from "./files.ts";
@@ -87,13 +88,14 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
     if (change?.before === undefined || change.after === undefined) throw new Error("This saved result has no complete file snapshots. Review its diff here.");
     await (options.openExternal ?? openCodeDiff)(change.label, change.before, change.after, ctx.cwd);
   };
+  const terminal = registerInteractiveTerminal(pi,bridge);
   const permits = new Map<string, Permit>();
   const rejected = new Set<string>();
   let stopThisRun = false;
   let revisionNote: string | undefined;
   let questionPause: { reviewId: string; generation: number; threadIds: string[] } | undefined;
   let generation = 0;
-  const clear = () => { permits.clear(); rejected.clear(); stopThisRun = false; revisionNote = undefined; questionPause = undefined; generation++; bridge?.cancel(); };
+  const clear = () => { terminal.clear(); permits.clear(); rejected.clear(); stopThisRun = false; revisionNote = undefined; questionPause = undefined; generation++; bridge?.cancel(); };
   pi.on("before_agent_start", clear);
   const restoreReview = (_event: unknown, ctx: ExtensionContext) => {
     clear(); latest = undefined; focusPending = undefined;
@@ -121,7 +123,7 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
   pi.on("session_start", restoreReview);
   pi.on("session_tree", restoreReview);
   // Automatic compaction is still the same human turn: keep denials and revision feedback.
-  pi.on("session_compact", () => { permits.clear(); questionPause = undefined; generation++; bridge?.cancel(); recoveryPending = true; });
+  pi.on("session_compact", () => { terminal.clear(); permits.clear(); questionPause = undefined; generation++; bridge?.cancel(); recoveryPending = true; });
   pi.on("session_shutdown", async () => { clear(); await bridge?.close(); });
 
   const guard = (event: ToolCallEvent) => {
@@ -150,12 +152,12 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
 
   pi.registerTool<typeof Step, StepDetails>({
     name: "pair_step", label: "Step", parameters: Step, executionMode: "sequential", renderShell: "self",
-    description: "Explain and request approval for one coherent step of 1–8 ordered edits, writes, or commands across up to four files. Approved actions run in order; failure stops the rest without rollback. Deny stops; a note permits a revised proposal for fresh approval. History reports success.",
+    description: "Explain and request approval for one coherent step of 1–8 ordered edits, writes, or commands across up to four files. Approved actions run in order; failure stops the rest without rollback. Deny stops; a note permits a revised proposal for fresh approval. History reports success. Use interactive:true for input prompts or terminal applications; type in VS Code after approval.",
     prepareArguments: preparePairArguments("pair_step", Step, normalizeStepArguments),
     reachesTools: (input) => {
       const retainedId = typeof input.resume === "string" ? input.resume : typeof input.revises === "string" ? input.revises : undefined;
-      const changes = [...(input.changes as { tool?: string }[] ?? []), ...(retainedId ? proposals.get(retainedId)?.changes ?? [] : [])];
-      return [...new Set(changes.flatMap((change) => change.tool ? [change.tool] : []))];
+      const changes = [...(input.changes as { tool?: string; interactive?: boolean }[] ?? []), ...(retainedId ? proposals.get(retainedId)?.changes ?? [] : [])];
+      return [...new Set(changes.flatMap((change) => change.tool ? ["interactive" in change && change.interactive ? "pair_terminal" : change.tool] : []))];
     },
     async execute(id, params, signal, update, ctx) {
       const { root } = options.active(ctx);
@@ -248,6 +250,7 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
           details: { ...details, status, note, changes },
         }, requestGeneration);
       }
+      if(prepared.some(change=>change.preview.interactive) && !bridge?.companionConnected)throw new Error("Open the Pair view in VS Code, then propose this interactive step again. Nothing was executed.");
       revisionNote = undefined;
       const completed: ChangePreview[] = previews.map((preview) => ({ ...preview, status: "Not run — proposed" }));
       const outputs: string[] = [];
@@ -273,9 +276,14 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
           latest = { ...details, status: `Applying ${index + 1}/${prepared.length} · ${change.path ? change.preview.label : change.tool + " command"}`, changes: completed };
           bridge?.update(latest.status, completed);
           update?.({ content: [{ type: "text", text: "Running approved step." }], details: latest });
-          permits.set(id, { tool: change.tool, input: canonical(change.input), root, path: change.path, hash: change.before?.hash });
+          const interactive = change.preview.interactive;
+          if(interactive && (!bridge || !details.reviewId))throw new Error("Open this step in VS Code before running an interactive command.");
+          const executionTool = interactive ? "pair_terminal" : change.tool;
+          const {interactive: _interactive, ...nativeInput} = change.input;
+          const executionInput = interactive ? terminal.grant({root,reviewId:details.reviewId!,index,shell:change.tool,command:change.preview.command!,timeout:change.input.timeout as number|undefined}) : nativeInput;
+          permits.set(id, { tool: executionTool, input: canonical(executionInput), root, path: change.path, hash: change.before?.hash });
           if (!change.path) publishOutput("Running", "");
-          const outcome = await ctx.executeTool(change.tool, change.input, { signal, onUpdate: !change.path ? partial => {
+          const outcome = await ctx.executeTool(executionTool, executionInput, { signal, onUpdate: !change.path ? partial => {
             if (!acceptingOutput || requestGeneration !== generation) return;
             streamed = partial.content.filter(item => item.type === "text").map(item => item.text).join("\n");
             if (Date.now() - lastUpdate < 100) return;
@@ -286,7 +294,7 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
           if (requestGeneration !== generation) throw new Error("The session changed while this action ran. Inspect its files; remaining actions were not run.");
           terminate = Boolean(outcome.result.terminate);
           const output = outcome.result.content.filter((item) => item.type === "text").map((item) => item.text).join("\n");
-          if (!change.path) publishOutput(outcome.isError ? "Failed" : "Completed", output);
+          if (!change.path) publishOutput(outcome.isError ? "Failed" : "Completed", (outcome.result.details as {raw?:string}|undefined)?.raw ?? output);
           outputs.push(`${change.preview.label}:\n${output}`);
           let actual = change.preview;
           if (change.path) {

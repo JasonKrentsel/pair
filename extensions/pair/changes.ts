@@ -11,14 +11,14 @@ const Explanation = {
     title: Type.String({ minLength: 1, maxLength: 100 }),
     why: Type.String({ minLength: 1, maxLength: 1200, description: "Markdown explaining this consequential section, not a copy of its code." }),
     startLine: Type.Integer({ minimum: 1 }), endLine: Type.Integer({ minimum: 1 }),
-  }, { additionalProperties: false }), { maxItems: 6, description: "Optional explanations anchored to 1-based lines of the proposed file or command. Omit for obvious edits." })),
+  }, { additionalProperties: false }), { maxItems: 6, description: "Optional explanations anchored to 1-based lines in the complete proposed file or command, never diff/hunk line numbers. Select actual code; omit blank-only ranges and obvious edits." })),
 };
 export const ChangeSchema = Type.Union([
   Type.Object({ tool: Type.Literal("edit"), path: Type.String({ minLength: 1 }), edits: Type.Array(Type.Object({
     oldText: Type.String({ minLength: 1, maxLength: 60000 }), newText: Type.String({ maxLength: 60000 }),
   }), { minItems: 1, maxItems: 10 }), ...Explanation }),
   Type.Object({ tool: Type.Literal("write"), path: Type.String({ minLength: 1 }), content: Type.String({ maxLength: 60000 }), ...Explanation }),
-  Type.Object({ tool: Type.Union([Type.Literal("bash"), Type.Literal("powershell")]), command: Type.String({ minLength: 1, maxLength: 4000 }), timeout: Type.Optional(Type.Number({ minimum: 1, maximum: 300 })), ...Explanation }),
+  Type.Object({ tool: Type.Union([Type.Literal("bash"), Type.Literal("powershell")]), command: Type.String({ minLength: 1, maxLength: 4000 }), timeout: Type.Optional(Type.Number({ minimum: 1, maximum: 300 })), interactive: Type.Optional(Type.Boolean({ description: "Use a real PTY for input prompts, progress redraws or terminal applications. Requires connected VS Code; keyboard input is live after approval." })), ...Explanation }),
 ]);
 export type ChangeInput = Static<typeof ChangeSchema>;
 export interface PreparedChange {
@@ -81,7 +81,7 @@ export async function prepareChanges(root: string, changes: ChangeInput[], signa
     signal?.throwIfAborted();
     const { tool, why: _why, annotations: _annotations, ...input } = structuredClone(change);
     if (!("path" in change)) {
-      prepared.push({ tool, input, preview: { label: change.command, kind: tool, command: change.command, cwd: root, added: 0, removed: 0, ...explanation(change, change.command) } });
+      prepared.push({ tool, input, preview: { label: change.command.replace(/\r\n|\r/g,"\n"), kind: tool, command: change.command, cwd: root, interactive: !!change.interactive, added: 0, removed: 0, ...explanation(change, change.command) } });
       continue;
     }
     const path = normalizedFile(root, change.path);

@@ -191,22 +191,31 @@ function createFeedbackController(vscode, context, options) {
       }
       const proposedSource = textFor(change, info.side);
       if (['proposed', 'command'].includes(info.side) && typeof proposedSource === 'string' && sameReview(state.review, identity(info.review))) {
-        const explanation = change.why || info.review.why;
-        const notes = [...(explanation ? [{ title: change.why ? (info.side === 'command' ? 'Why this command runs' : 'Why this file changes') : 'Step overview · applies to the whole proposal', why: explanation, startLine: 1, endLine: 1 }] : []), ...(change.annotations || [])];
-        for (const [index, note] of notes.entries()) {
-          if (!Number.isInteger(note.startLine) || !Number.isInteger(note.endLine) || note.startLine < 1 || note.endLine > sourceLines(proposedSource).length || note.endLine < note.startLine) continue;
-          desired.set(uri + ':explanation:' + index, { uri: info.uri, range: new vscode.Range(note.startLine - 1, 0, note.endLine - 1, 0), label: note.title || 'Why these lines?', comments: [nativeComment(note.why, 'Pi', 'Explanation')], contextValue: 'pairExplanation', expand: index === 0 });
+        // General file rationale lives in the sidebar/desk. Only explicit code
+        // sections get inline threads; no auto-expanded box on unrelated line 1.
+        const lines=sourceLines(proposedSource), grouped=new Map();
+        for(const note of change.annotations || []){
+          if(!Number.isInteger(note.startLine)||!Number.isInteger(note.endLine)||note.startLine<1||note.endLine>lines.length||note.endLine<note.startLine)continue;
+          let start=note.startLine-1,end=note.endLine-1;
+          while(start<=end&&!lines[start].trim())start++;
+          while(end>=start&&!lines[end].trim())end--;
+          if(start>end)continue;
+          const key=start+':'+end, group=grouped.get(key)||{start,end,notes:[]};group.notes.push(note);grouped.set(key,group);
+        }
+        for(const [key,group]of grouped){
+          desired.set(uri+':explanation:'+key,{uri:info.uri,range:new vscode.Range(group.start,lines[group.start].search(/\S/),group.end,lines[group.end].length),
+            label:group.notes.length===1?group.notes[0].title:'Why this section?',comments:group.notes.map(note=>nativeComment(note.why,'Pi',note.title||'Explanation')),contextValue:'pairExplanation',expand:false});
         }
       }
     }
     for (const [key, entry] of nativeThreads) if (!desired.has(key)) { entry.thread.dispose(); nativeThreads.delete(key); }
     for (const [key, value] of desired) {
-      const signature = JSON.stringify([value.label, value.comments.map(comment => [comment.body?.value ?? comment.body, comment.label]), value.state, value.contextValue]);
+      const signature = JSON.stringify([value.range.start, value.range.end, value.label, value.comments.map(comment => [comment.body?.value ?? comment.body, comment.label]), value.state, value.contextValue]);
       const existing = nativeThreads.get(key);
       if (existing?.signature === signature) continue;
       const thread = existing?.thread || commentController.createCommentThread(value.uri, value.range, value.comments);
       thread.label = value.label; thread.contextValue = value.contextValue; thread.pairId = value.pairId; thread.canReply = false;
-      if (existing) thread.comments = value.comments;
+      if (existing) { thread.comments = value.comments; thread.range = value.range; }
       if (value.state !== undefined) thread.state = value.state;
       if (!existing) thread.collapsibleState = value.contextValue.startsWith('pairDraft') || value.expand ? vscode.CommentThreadCollapsibleState.Expanded : vscode.CommentThreadCollapsibleState.Collapsed;
       else if (value.reply && existing.reply !== value.reply) thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
