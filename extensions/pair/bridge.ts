@@ -24,11 +24,13 @@ function memoryMutation(value: unknown): MemoryMutation {
   return body as MemoryMutation;
 }
 
-export interface BridgeDecision { action: "approve" | "deny"; note?: string; feedback?: FeedbackDecision }
+export interface BridgeDecision { action: "approve" | "deny" | "question"; note?: string; feedback?: FeedbackDecision }
 export interface BridgeReview {
   id: string;
   revision: number;
   fingerprint: string;
+  /** Decision epoch; snapshot identity remains stable across question pauses. */
+  gate?: number;
   title: string;
   why: string;
   status: string;
@@ -77,6 +79,8 @@ export class PairReviewBridge {
   private onDecision?: (decision: BridgeDecision) => void;
   private validate?: () => void;
   private sequence = 0;
+  private gate = 0;
+  private suspended?: { reviewId: string; threadIds: string[] };
   private lifecycle: Promise<void> = Promise.resolve();
   private memoryHandlers?: { read: (root: string) => WorkMemory | undefined; change: (root: string, action: MemoryMutation) => WorkMemory };
   private readonly feedbackStore = new FeedbackStore();
@@ -86,6 +90,8 @@ export class PairReviewBridge {
   }
 
   get current(): BridgeReview | undefined { return this.review && structuredClone(this.review); }
+  get decisionVersion(): number { return this.gate; }
+  get questionPending(): boolean { return !!this.suspended; }
   get sessionId(): string | undefined { return this.registry?.sessionId; }
   get feedback() { return this.feedbackStore.state; }
   archived(reviewId: string) { return this.feedbackStore.archived(reviewId); }
@@ -153,14 +159,31 @@ export class PairReviewBridge {
     const id = randomUUID();
     const revision = 1;
     const fingerprint = createHash("sha256").update(JSON.stringify({ id, revision, ...snapshots })).digest("hex");
-    const next = { id, revision, fingerprint, ...snapshots, pending: true, status: "Awaiting permission" };
+    const next = { id, revision, fingerprint, gate: 1, ...snapshots, pending: true, status: "Awaiting permission" };
     this.feedbackStore.publish(next, snapshots.revises);
     this.cancel();
+    this.gate++;
     this.review = freeze(next);
     this.focus = undefined;
     this.onDecision = onDecision;
     this.validate = validate;
     this.sequence++;
+    return this.current!;
+  }
+
+  /** Re-arm only an answered question pause, keeping snapshots and anchors exact. */
+  resume(reviewId: string, onDecision: (decision: BridgeDecision) => void, validate: () => void): BridgeReview {
+    if (!this.registry || !this.review || this.review.pending || this.review.id !== reviewId || this.suspended?.reviewId !== reviewId)
+      throw new Error("This question pause is no longer resumable. Request a fresh step.");
+    const threads = this.feedbackStore.state.threads;
+    if (!this.suspended.threadIds.every(id => threads.some(thread => thread.id === id && thread.intent === "ask" && !!thread.reply)))
+      throw new Error("Answer every question before resuming the step.");
+    validate();
+    this.feedbackStore.outcome(reviewId, "Ready to approve");
+    this.suspended = undefined;
+    this.gate++;
+    this.review = freeze({ ...this.review, gate: (this.review.gate ?? 1) + 1, pending: true, status: "Ready to approve" });
+    this.onDecision = onDecision; this.validate = validate; this.sequence++;
     return this.current!;
   }
 
@@ -183,7 +206,7 @@ export class PairReviewBridge {
 
   update(status: string, changes?: ChangePreview[]): void {
     if (!this.review) return;
-    const pending = this.review.pending && status === "Awaiting permission";
+    const pending = this.review.pending && ["Awaiting permission", "Ready to approve"].includes(status);
     const snapshots = changes && structuredClone(changes);
     const changed = snapshots && JSON.stringify(snapshots) !== JSON.stringify(this.review.changes);
     if (pending && changed) throw new Error("Publish a fresh review when proposed files change.");
@@ -192,6 +215,7 @@ export class PairReviewBridge {
     const revision = this.review.revision + (changed ? 1 : 0);
     const fingerprint = changed ? createHash("sha256").update(JSON.stringify({ id: this.review.id, revision, changes: snapshots })).digest("hex") : this.review.fingerprint;
     this.feedbackStore.outcome(this.review.id, status);
+    if (status !== "Answering questions" || changed) this.suspended = undefined;
     if (!pending) { this.onDecision = undefined; this.validate = undefined; }
     this.review = freeze({ ...this.review, status, pending, revision, fingerprint, ...(snapshots ? { changes: snapshots } : {}) });
     this.sequence++;
@@ -199,6 +223,7 @@ export class PairReviewBridge {
 
   record(input: { title: string; why: string; changes: ChangePreview[]; status: string; reviewId?: string }): BridgeReview {
     if (this.review?.pending) throw new Error("Finish the current permission review before opening a recorded result.");
+    this.suspended = undefined;
     const archived = input.reviewId ? this.archived(input.reviewId) : undefined;
     const id = input.reviewId ?? randomUUID();
     const snapshots = structuredClone(input.changes);
@@ -229,6 +254,7 @@ export class PairReviewBridge {
   }
 
   cancel(): void {
+    if (this.suspended) { this.suspended = undefined; this.update("Cancelled"); }
     if (!this.review?.pending) return;
     this.decide({ action: "deny" });
     this.update("Cancelled");
@@ -276,7 +302,7 @@ export class PairReviewBridge {
       response.setHeader("ETag", etag);
       if (request.headers["if-none-match"] === etag) return this.send(response, 304);
       const review = this.current;
-      const summary = review && { id: review.id, revision: review.revision, fingerprint: review.fingerprint, title: review.title, why: review.why, status: review.status, pending: review.pending };
+      const summary = review && { id: review.id, revision: review.revision, fingerprint: review.fingerprint, gate: review.gate, title: review.title, why: review.why, status: review.status, pending: review.pending };
       const memory = this.memoryHandlers?.read(registry.root);
       return this.send(response, 200, { version: 1, sessionId: registry.sessionId, root: registry.root, review: (path === "/status" ? summary : review) ?? null, memory: memory ?? null, feedback: this.feedback, ...(this.focus ? { focus: this.focus } : {}) });
     }
@@ -320,13 +346,15 @@ export class PairReviewBridge {
           if (previous) return this.send(response, 200, { accepted: true, duplicate: true, feedback: this.feedback });
           if (!this.review?.pending) throw new Error("The proposal is no longer pending. Open its current review before sending feedback.");
           const feedback = this.feedbackStore.submit(batch, this.review);
-          // Submission is durably recorded before its sole pending gate is resolved.
-          // It is always a denial; UI feedback can never manufacture approval.
+          // A question releases the model to answer, but never spends or invents approval.
+          // The exact step can be re-armed after every answer; revisions require a fresh proposal.
+          const questionsOnly = feedback.threads.every(thread => thread.intent === "ask");
+          this.suspended = questionsOnly ? { reviewId: this.review.id, threadIds: feedback.threads.map(thread => thread.id) } : undefined;
           const callback = this.onDecision;
           this.onDecision = undefined; this.validate = undefined;
-          this.review = freeze({ ...this.review, pending: false, status: "Feedback submitted" });
+          this.review = freeze({ ...this.review, pending: false, status: questionsOnly ? "Answering questions" : "Revision requested" });
           this.sequence++;
-          callback?.({ action: "deny", feedback });
+          callback?.({ action: questionsOnly ? "question" : "deny", feedback });
           return this.send(response, 200, { accepted: true, duplicate: false, feedback: this.feedback });
         } catch (error) { return this.send(response, 409, { error: (error as Error).message.slice(0, 600) }); }
       }
@@ -346,10 +374,12 @@ export class PairReviewBridge {
       try {
         body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         decision = decisionFrom(body);
-        if (Object.keys(body).some((key) => !["reviewId", "revision", "fingerprint", "action", "note"].includes(key))) throw new Error("Unexpected review decision field.");
+        if (body.gate !== undefined && (!Number.isSafeInteger(body.gate) || (body.gate as number) < 1)) throw new Error("Include a positive decision gate.");
+        if (Object.keys(body).some((key) => !["reviewId", "revision", "fingerprint", "gate", "action", "note"].includes(key))) throw new Error("Unexpected review decision field.");
         if (typeof body.reviewId !== "string" || !Number.isSafeInteger(body.revision) || (body.revision as number) < 1 || typeof body.fingerprint !== "string") throw new Error("Include the review ID, revision, and fingerprint.");
       } catch (error) { return this.send(response, 400, { error: error instanceof SyntaxError ? "Send a valid JSON review decision." : (error as Error).message }); }
-      if (!this.review?.pending || body.reviewId !== this.review.id || body.revision !== this.review.revision || body.fingerprint !== this.review.fingerprint) {
+      if (!this.review?.pending || body.reviewId !== this.review.id || body.revision !== this.review.revision || body.fingerprint !== this.review.fingerprint
+        || (body.gate ?? 1) !== (this.review.gate ?? 1)) {
         return this.send(response, 409, { error: "This review is no longer pending. Refresh before deciding." });
       }
       try {

@@ -166,3 +166,32 @@ test("external editor failure stays inside the pending review", async () => {
   assert.equal(f.component.state.mode, "review");
   assert.equal(f.component.state.canApprove, true);
 });
+
+test("mixed reviews navigate all eight actions with explanations and explicit complete-step approval", async () => {
+  const opened: number[] = [];
+  const actions = Array.from({ length: 4 }, (_, index) => [
+    { ...filePreview(`src/file${index}.ts`, "", `export const item = ${index};\n`, "New file"), why: `Create file ${index}.` },
+    { label: `check module ${index}`, command: `check module ${index}`, cwd: "C:/project", kind: "bash", added: 0, removed: 0, why: `Verify module ${index} before continuing.` },
+  ]).flat();
+  const f = fixture({ changes: actions, onOpenExternal: async (index: number) => { opened.push(index); } });
+  for (const [columns, rows] of [[80, 24], [110, 36], [160, 45]]) {
+    f.terminal.columns = columns; f.terminal.rows = rows;
+    for (const index of [0, 1, 7]) {
+      f.component.handleInput(String(index + 1));
+      const lines = f.render(), text = readable(lines);
+      assert.equal(f.component.state.selected, index);
+      assert.ok(lines.every(line => visibleWidth(line) <= columns - 4));
+      assert.ok(lines.length <= rows - 4);
+      assert.match(text, /8 actions · 4 files · 4 commands/);
+      assert.match(text, /Approve step · all 8 actions/);
+      assert.match(text, index % 2 ? /Verify module/ : /Create file/);
+      assert.equal(f.component.state.canApprove, true);
+    }
+  }
+  f.component.handleInput("v");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(opened, [7]);
+  assert.equal(f.decisions.length, 0);
+  f.render(); f.component.handleInput("a");
+  assert.deepEqual(f.decisions, [{ action: "approve" }]);
+});

@@ -4,9 +4,9 @@ Review Pair proposals in the same VS Code workspace as your Pi working directory
 
 ## Use
 
-1. Install this companion and use Pair 0.5.0 or later in Pi for inline section feedback. Checkpoints require Pair 0.4.0; basic review remains compatible with Pair 0.3.0.
+1. Install this companion and use Pair 0.6.0 in Pi for mixed steps and question resumption. Basic inline feedback remains compatible with Pair 0.5.0. Checkpoints require Pair 0.4.0; basic review remains compatible with Pair 0.3.0.
 2. Open Pi's working directory in VS Code. A single matching Pi session connects automatically. With multiple sessions, use **Pair: Select Pi Session**.
-3. Pair's next proposal opens its explanation, file list and first native diff. Choose another file in **Step Actions**, or use **Pair: Next Action in Step** / **Previous Action in Step**.
+3. Pair's next proposal opens its explanation, file list and first native diff. Choose another file or command in the numbered **Step Actions** list, or use **Pair: Next Action in Step** / **Previous Action in Step**.
 4. Choose **Approve step**, **Deny**, or **Deny with note**. Approval covers the complete listed step. Pi executes the exact reviewed operations and reports their result in both interfaces.
 
 The review buttons remain in the sidebar while the native editor scrolls. The editor toolbar also links back to the review and offers approval actions. Use the normal VS Code diff layout and language-mode controls to adjust presentation. `pair.openReviewAutomatically` can disable automatic focus for new proposals; explicitly opening a review from Pi still focuses it.
@@ -15,11 +15,11 @@ The review buttons remain in the sidebar while the native editor scrolls. The ed
 
 Keep Pair in your right sidebar. This update preserves your existing container position. Diffs and **Pair: Open Review Desk** use the active editor group; the extension does not create a second editor group over your right-side controls.
 
-Select 1–40 lines in an original, proposed, or command snapshot. Use the native comment gutter to **Save question** or **Save change request**, or the editor context menu's **Ask About Selected Lines** / **Request Change to Selected Lines** commands. File explanations and optional line annotations appear as native Markdown comment threads. Drafts remain local until you choose **Send feedback batch**.
+Select 1–40 lines in an original, proposed, or command snapshot. Use the native comment gutter to **Save question** or **Save change request**, or the editor context menu's **Ask About Selected Lines** / **Request Change to Selected Lines** commands. File explanations and optional line annotations appear as native Markdown comment threads. Drafts stay local. Use the inline **Send question** button for one question, or send a group from Review Desk. Question and answer threads expand when new content arrives.
 
 Review Desk groups drafts, changed proposals, waiting questions, answers, addressed feedback and older anchors. Open an anchored diff to inspect the original exact snapshot; **Changes since feedback** compares the old proposed file with its explicitly linked revision. It never guesses that unrelated similar code is a revision. Marking feedback addressed only changes its review state and never approves execution.
 
-Sending 1–10 comments (up to 1,500 characters each) pauses the current approval and returns one compact feedback batch to the existing Pi conversation. Questions ask Pi to explain and wait for you; requests for changes let Pi prepare a new proposal. A mixed batch waits for your direction after answering. Recorded replies appear in both the native thread and Review Desk. Approval still covers the complete proposal, and unsent current drafts must be sent or removed before approving in VS Code.
+Sending 1–10 comments (up to 1,500 characters each) pauses the current approval and returns one compact feedback batch to the existing Pi conversation. Question-only batches ask Pi to explain, then restore the exact step for explicit approval; requests for changes let Pi prepare a new proposal. A batch containing both questions and revision requests keeps the original step blocked for correction. While Pi answers, the panel says **Answering questions**; when the same proposal is rearmed it says **Ready to approve**. Recorded replies appear in both the native thread and Review Desk. Mixed steps show every file operation and command in execution order, each with its own rationale. Approval still covers the complete proposal, and unsent current drafts must be sent or removed before approving in VS Code.
 
 Drafts, selections, exact snapshots and view navigation stay outside model context. Local drafts survive VS Code reload and a Pi bridge reconnect under the same actual conversation. A different conversation or branch uses its own scope. Older draft anchors remain visible but cannot be submitted against new code; recreate the feedback on the current selection. An ambiguous network response retains the exact batch for idempotent retry. History retains a bounded set of snapshots; an evicted snapshot keeps the thread's excerpt.
 

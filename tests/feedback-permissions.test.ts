@@ -77,7 +77,7 @@ test("section questions pause mutations while allowing stored answers and no aut
   try {
     f.setIntent("ask");
     const result = await f.run([{ tool: "write", path: "a.ts", content: "export const answer = 1;\n" }]);
-    assert.equal(result.details.status, "Discussion requested");
+    assert.equal(result.details.status, "Answering questions");
     assert.ok(f.controller.guard({ toolName: "pair_step", input: {} } as any)?.block);
     assert.equal(f.controller.guard({ toolName: "pair_work", input: { action: "feedback" } } as any), undefined);
     f.controller.replyFeedback(f.ctx, [{ threadId: "thread-1", text: "The callers need one shared value." }]);

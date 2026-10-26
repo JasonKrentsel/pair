@@ -120,3 +120,15 @@ test('checkpoint panel distinguishes claims, stale verification, scope and safe 
   const queued = renderCheckpointPanel({ memory: { ...memory, constraints: [{ ...memory.constraints[0], pendingTurn: true }] }, sessionId: 'session-1', connected: true, trusted: true });
   assert.match(queued, /<span class="scope">Next turn<\/span>/);
 });
+
+// Snapshot anchors survive a question; approval belongs to the newly armed gate.
+test('resumed question reviews preserve anchors but reject delayed approval identities', () => {
+  const { decisionIdentity, sameDecision } = require('../client.cjs');
+  const original = { id: 'r', revision: 1, fingerprint: 'hash', gate: 1 };
+  const oldDecision = decisionIdentity(original), resumed = { ...original, gate: 2 };
+  assert.equal(sameReview(resumed, identity(original)), true);
+  assert.equal(sameDecision(resumed, oldDecision), false);
+  assert.equal(sameDecision(resumed, identity(original)), false);
+  assert.equal(sameDecision(resumed, decisionIdentity(resumed)), true);
+  assert.equal(sameDecision(original, identity(original)), true);
+});

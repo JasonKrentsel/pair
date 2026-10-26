@@ -25,7 +25,7 @@ async function fixture() {
   return { root, bridge, events, decisions, request, publish, async close() { await bridge.close(); rmSync(root, { recursive: true, force: true }); } };
 }
 
-test("section feedback is persisted before one denial callback and retries cannot duplicate it", async () => {
+test("section questions are persisted before one neutral pause and retries cannot duplicate it", async () => {
   const f = await fixture();
   try {
     const proposed = f.publish();
@@ -36,7 +36,7 @@ test("section feedback is persisted before one denial callback and retries canno
     assert.deepEqual((await Promise.all(responses.map(response => response.json()))).map((data: any) => data.duplicate).sort(), [false, true]);
     assert.equal(f.events.length, count + 1);
     assert.equal(f.decisions.length, 1);
-    assert.equal(f.decisions[0].action, "deny");
+    assert.equal(f.decisions[0].action, "question");
     assert.equal(f.decisions[0].feedback?.intent, "ask");
     assert.equal(f.decisions[0].feedback?.threads[0].excerpt, "export function answer() {\n  return 2;\n}");
     assert.equal(f.bridge.feedback.threads[0].status, "submitted");

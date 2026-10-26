@@ -3,7 +3,7 @@ const VERSION = require('./package.json').version;
 const vscode = require('vscode');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { canonicalRoot, containedFile, discoverSessions, request, validReview, validMemory, identity, sameReview, associatedLanguage } = require('./client.cjs');
+const { canonicalRoot, containedFile, discoverSessions, request, validReview, validMemory, identity, sameReview, decisionIdentity, sameDecision, associatedLanguage } = require('./client.cjs');
 const { renderCheckpointPanel, scopeLabel } = require('./checkpoint-panel.cjs');
 const { validFeedback } = require('./feedback-model.cjs');
 const { markdown } = require('./feedback-ui.cjs');
@@ -65,7 +65,7 @@ function activate(context) {
     if (disposed) return;
     feedbackController?.sync();
     updateCheckpoint();
-    const signature = JSON.stringify([selected?.sessionId, connected, busy, memoryBusy, errorMessage, review?.id, review?.revision, review?.fingerprint, review?.status, review?.pending, sessions.length, vscode.workspace.isTrusted, dirtyFiles(), alteredSnapshots().length, feedbackController?.signature()]);
+    const signature = JSON.stringify([selected?.sessionId, connected, busy, memoryBusy, errorMessage, review?.id, review?.revision, review?.fingerprint, review?.gate, review?.status, review?.pending, sessions.length, vscode.workspace.isTrusted, dirtyFiles(), alteredSnapshots().length, feedbackController?.signature()]);
     if (signature === displayedState) return;
     displayedState = signature;
     void vscode.commands.executeCommand('setContext', 'pair.canDecide', !!canDecide()).then(undefined, () => {});
@@ -94,7 +94,7 @@ function activate(context) {
 
   function renderPanel() {
     const nonce = crypto.randomBytes(16).toString('hex');
-    const currentIdentity = review ? JSON.stringify(identity(review)).replace(/</g, '\\u003c') : 'null';
+    const currentIdentity = review ? JSON.stringify(decisionIdentity(review)).replace(/</g, '\\u003c') : 'null';
     const count = review?.changes.length || 0;
     const disabled = canDecide() ? '' : 'disabled';
     const approveDisabled = canApprove() ? '' : 'disabled';
@@ -105,21 +105,26 @@ function activate(context) {
       : feedbackController?.blocksApproval() ? 'Send or remove your draft feedback before approving this step.'
       : !connected ? errorMessage || 'Start Pi with Pair in this folder. Matching sessions appear here automatically.' : '';
     const actionLabel = 'Approve step';
-    const commands = review?.changes.filter(change => change.command !== undefined).map(change => `<div class="command"><div class="muted">${escape(change.kind)} · ${escape(change.cwd || selected?.root)}</div><pre>${escape(change.command)}</pre></div>`).join('') || '';
+    const actions = review?.changes.map((change, index) => {
+      const command = change.command !== undefined;
+      const label = command ? change.command.split(/\r?\n/)[0] : change.label;
+      return `<li class="step-action"><div class="action-heading"><span class="action-number">${index + 1}</span><div><div class="muted">${escape(change.kind)}${command ? '' : ' · +' + (change.added || 0) + ' −' + (change.removed || 0)}${change.status ? ' · ' + escape(change.status) : ''}</div><button class="action-link" data-action="open-action" data-index="${index}">${escape(label)}</button></div></div>${change.why ? '<div class="action-why">' + markdown(change.why) + '</div>' : ''}${command ? '<details><summary>Exact command</summary><div class="muted">' + escape(change.cwd || selected?.root) + '</div><pre>' + escape(change.command) + '</pre></details>' : ''}</li>`;
+    }).join('') || '';
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"><meta name="viewport" content="width=device-width,initial-scale=1"><style nonce="${nonce}">
       h3{font-size:1em;font-weight:600;margin:14px 0 6px}.feedback-summary{margin:20px 0 14px;padding-top:8px;border-top:1px solid var(--vscode-panel-border)}.draft{padding:8px 0;border-bottom:1px solid var(--vscode-panel-border)}.draft p{margin:4px 0;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.why p{margin:6px 0}.why ul{padding-left:20px}.why code{font-family:var(--vscode-editor-font-family);background:var(--vscode-textCodeBlock-background)}
       body{padding:12px 16px;margin:0;color:var(--vscode-foreground);font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);line-height:1.5}h2{font-size:1.08em;margin:6px 0 10px;font-weight:600}.status{color:var(--vscode-descriptionForeground);font-size:.92em}.why{white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 14px}.muted{color:var(--vscode-descriptionForeground);font-size:.92em}.warning{color:var(--vscode-editorWarning-foreground);margin:12px 0}.actions{display:flex;flex-wrap:wrap;gap:8px;padding:4px 0 10px;position:sticky;top:0;background:var(--vscode-sideBar-background)}button{border:1px solid transparent;border-radius:2px;padding:6px 10px;font:inherit;cursor:pointer;background:var(--vscode-button-background);color:var(--vscode-button-foreground)}button:hover{background:var(--vscode-button-hoverBackground)}button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:2px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--vscode-editor-font-family);font-size:var(--vscode-editor-font-size);background:var(--vscode-textCodeBlock-background);padding:8px}.command{margin:12px 0}.scope{margin-top:10px}.empty{margin-top:12px}
       .review-controls{position:sticky;top:0;z-index:1;background:var(--vscode-sideBar-background);padding-top:4px}.review-controls .actions{position:static}.review-controls .feedback-summary{margin:2px 0 10px;padding-top:0;border:0}.review-controls h3{margin:4px 0}.review-controls p{margin:0 0 8px}.scope{margin-bottom:12px}
+      .step-actions{list-style:none;padding:0;margin:8px 0 20px}.step-action{padding:12px 0;border-top:1px solid var(--vscode-panel-border)}.action-heading{display:flex;gap:9px;align-items:flex-start}.action-heading>div{min-width:0}.action-number{min-width:22px;height:22px;text-align:center;border:1px solid var(--vscode-panel-border);border-radius:50%;color:var(--vscode-descriptionForeground)}.action-link{display:block;background:transparent;color:var(--vscode-textLink-foreground);padding:0;text-align:left;overflow-wrap:anywhere;border:0}.action-link:hover{background:transparent;text-decoration:underline}.action-why p{margin:6px 0;overflow-wrap:anywhere}.step-action details{margin-top:8px}.step-action summary{cursor:pointer;color:var(--vscode-descriptionForeground)}
       </style></head><body>
       <div class="status">Pair ${escape(VERSION)} · ${escape(selected ? `${path.basename(selected.root)} · ${selected.sessionId.slice(0, 8)}` : 'Pair for Pi')} ${connected ? '' : '· disconnected'}</div>
       ${review ? `<h2>${escape(review.title)}</h2><div class="status">${escape(review.status)} · ${count} ${count === 1 ? 'action' : 'actions'}</div>
         <div class="review-controls"><div class="actions"><button data-action="approve" ${approveDisabled}>${escape(actionLabel)}</button><button class="secondary" data-action="deny" ${disabled}>Deny</button><button class="secondary" data-action="note" ${disabled}>Deny with note</button></div>${feedbackController?.sidebar('controls') || ''}</div>
-        <div class="why">${markdown(review.why)}</div>${commands}<div class="muted scope">Approval covers every action in this step.</div>`
+        <div class="why">${markdown(review.why)}</div><h3>Actions in order</h3><ol class="step-actions" aria-label="Step actions in execution order">${actions}</ol><div class="muted scope">Approval runs every action in this order. A failure stops the remaining actions.</div>`
         : `<p class="empty">${sessions.length > 1 ? 'Choose the Pi session you want to review.' : connected ? 'Connected. The next Pair proposal will appear here.' : 'Open the same folder in Pi and VS Code.'}</p>`}
       ${blocker ? `<p class="warning" role="status">${escape(blocker)}</p>` : ''}
       ${feedbackController?.sidebar(review ? 'drafts' : 'all') || ''}
       <button class="secondary" data-action="session">Select session</button>
-      <script nonce="${nonce}">const api=acquireVsCodeApi();const identity=${currentIdentity};document.querySelectorAll('button[data-action]').forEach(button=>button.addEventListener('click',()=>api.postMessage({action:button.dataset.action,identity})));</script>
+      <script nonce="${nonce}">const api=acquireVsCodeApi();const identity=${currentIdentity};document.querySelectorAll('button[data-action]').forEach(button=>button.addEventListener('click',()=>api.postMessage({action:button.dataset.action,identity,index:Number(button.dataset.index)})));</script>
       </body></html>`;
   }
 
@@ -127,7 +132,7 @@ function activate(context) {
     onDidChangeTreeData: changesChanged.event,
     getChildren: () => review ? review.changes.map((change, index) => ({ change, index, reviewId: review.id })) : [],
     getTreeItem: item => {
-      const entry = new vscode.TreeItem(item.change.label, vscode.TreeItemCollapsibleState.None);
+      const entry = new vscode.TreeItem(`${item.index + 1}. ${item.change.label}`, vscode.TreeItemCollapsibleState.None);
       const file = selected && containedFile(selected.root, item.change.label);
       entry.description = item.change.before !== undefined || item.change.after !== undefined ? `+${item.change.added || 0} −${item.change.removed || 0}` : item.change.kind;
       entry.tooltip = [item.change.label, item.change.kind, item.change.status].filter(Boolean).join('\n');
@@ -156,6 +161,10 @@ function activate(context) {
         if (message.action === 'session') return void chooseSession().catch(showError);
         if (message.action === 'desk') return void feedbackController.openDesk().catch(showError);
         if (message.action === 'send-feedback') return void feedbackController.sendFeedback().catch(showError);
+        if (message.action === 'open-action') {
+          if (sameReview(review, message.identity) && Number.isInteger(message.index)) void openChange(message.index).catch(showError);
+          return;
+        }
         if (!['approve', 'deny', 'note'].includes(message.action)) return;
         void decide(message.action, message.identity).catch(showError);
       }, undefined, context.subscriptions);
@@ -366,9 +375,10 @@ function activate(context) {
     if (uri?.scheme === SCHEME) {
       if (uri.authority !== selected?.sessionId) throw new Error('This diff belongs to a different Pi session. Open the current review before responding.');
       const query = new URLSearchParams(uri.query);
-      return { reviewId: query.get('reviewId'), revision: Number(query.get('revision')), fingerprint: query.get('fingerprint') };
+      const snapshot = { reviewId: query.get('reviewId'), revision: Number(query.get('revision')), fingerprint: query.get('fingerprint') };
+      return sameReview(review, snapshot) ? decisionIdentity(review) : snapshot;
     }
-    return identity(review);
+    return decisionIdentity(review);
   }
 
   async function decide(action, suppliedIdentity) {
@@ -376,16 +386,16 @@ function activate(context) {
     const currentSession = selected && { ...selected };
     if (!currentSession || !connected || !matchesWorkspace(currentSession)) throw new Error('Reconnect to the matching Pi session before responding.');
     if (!vscode.workspace.isTrusted) throw new Error('Trust this workspace before responding to Pair.');
-    if (!sameReview(review, expected) || !review.pending) throw new Error('This proposal is no longer pending. Review the current change.');
+    if (!sameDecision(review, expected) || !review.pending) throw new Error('This proposal is no longer pending. Review the current step.');
     if (busy) return;
     let note;
     if (action === 'note') {
-      note = await vscode.window.showInputBox({ title: 'Deny change with a note', prompt: 'What should the agent change? Nothing will run.', placeHolder: 'Explain what should change', ignoreFocusOut: true,
+      note = await vscode.window.showInputBox({ title: 'Deny step with a note', prompt: 'What should the agent change? Nothing will run.', placeHolder: 'Explain what should change', ignoreFocusOut: true,
         validateInput: value => !value.trim() ? 'Enter a note, or press Escape to cancel.' : value.length > 1800 ? 'Keep the note under 1,800 characters.' : undefined });
       if (note === undefined) return;
       note = note.trim();
     }
-    if (selected?.sessionId !== currentSession.sessionId || !matchesWorkspace(currentSession) || !connected || !sameReview(review, expected) || !review.pending) throw new Error('The review changed while you were responding. Open the current proposal.');
+    if (selected?.sessionId !== currentSession.sessionId || !matchesWorkspace(currentSession) || !connected || !sameDecision(review, expected) || !review.pending) throw new Error('The review changed while you were responding. Open the current proposal.');
     if (action === 'approve' && dirtyFiles().length) throw new Error(`Save or discard unsaved changes in ${dirtyFiles().join(', ')} before approving. Pair does not overwrite editor buffers.`);
     if (action === 'approve' && alteredSnapshots().length) throw new Error('A review snapshot was modified. Close its diff and reopen the Pair review before approving.');
     if (action === 'approve' && feedbackController?.blocksApproval()) throw new Error('Send or remove your draft feedback before approving this step.');
@@ -393,7 +403,7 @@ function activate(context) {
     update();
     try {
       await request(currentSession, 'POST', '/decision', { ...expected, action: action === 'approve' ? 'approve' : 'deny', ...(note ? { note } : {}) });
-      if (sameReview(review, expected)) review = { ...review, pending: false, status: action === 'approve' ? 'Approved' : 'Denied' };
+      if (sameDecision(review, expected)) review = { ...review, pending: false, status: action === 'approve' ? 'Approved' : 'Denied' };
       await refresh(true);
     } catch (error) {
       await refresh(true);
@@ -464,6 +474,7 @@ function activate(context) {
   register('pair.editDraft', input => feedbackController.editDraft(input));
   register('pair.removeDraft', input => feedbackController.removeDraft(input));
   register('pair.sendFeedback', () => feedbackController.sendFeedback());
+  register('pair.sendQuestion', input => feedbackController.sendQuestion(input));
   register('pair.openFeedback', input => feedbackController.openFeedback(input));
   register('pair.addressFeedback', input => feedbackController.addressFeedback(input));
   register('pair.review', openReview);

@@ -85,6 +85,7 @@ function request(session, method = 'GET', route = '/review', body, etag) {
 
 function validReview(value) {
   return value && typeof value.id === 'string' && Number.isInteger(value.revision) && typeof value.fingerprint === 'string'
+    && (value.gate === undefined || Number.isSafeInteger(value.gate) && value.gate >= 1)
     && typeof value.title === 'string' && typeof value.why === 'string' && typeof value.status === 'string' && typeof value.pending === 'boolean'
     && Array.isArray(value.changes) && value.changes.length <= 100 && value.changes.every(change => change && typeof change.label === 'string'
       && typeof change.kind === 'string' && ['before', 'after', 'text', 'command', 'cwd', 'status', 'why'].every(key => change[key] === undefined || typeof change[key] === 'string')
@@ -117,6 +118,14 @@ function identity(review) {
   return review && { reviewId: review.id, revision: review.revision, fingerprint: review.fingerprint };
 }
 
+function decisionIdentity(review) {
+  return review && { ...identity(review), ...(review.gate !== undefined ? { gate: review.gate } : {}) };
+}
+
+function sameDecision(review, expected) {
+  return sameReview(review, expected) && (review.gate ?? 1) === (expected.gate ?? 1);
+}
+
 function sameReview(review, expected) {
   return !!review && !!expected && review.id === expected.reviewId && review.revision === expected.revision && review.fingerprint === expected.fingerprint;
 }
@@ -139,4 +148,4 @@ function associatedLanguage(associations, filename, root) {
   return best?.language;
 }
 
-module.exports = { canonicalRoot, containedFile, registryDirectory, validRegistry, discoverSessions, request, validReview, validMemory, identity, sameReview, associatedLanguage };
+module.exports = { canonicalRoot, containedFile, registryDirectory, validRegistry, discoverSessions, request, validReview, validMemory, identity, sameReview, decisionIdentity, sameDecision, associatedLanguage };

@@ -2,7 +2,7 @@
   "name": "pi-pair",
   "displayName": "Pair for Pi",
   "description": "Review exact Pi proposals and approve steps inside your project in VS Code.",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "publisher": "local-pair",
   "license": "UNLICENSED",
   "engines": { "vscode": "^1.96.0" },
@@ -26,10 +26,11 @@
       { "command": "pair.reviewDesk", "title": "Open Review Desk", "category": "Pair", "icon": "$(comment-discussion)" },
       { "command": "pair.addAskFeedback", "title": "Ask About Selected Lines", "category": "Pair", "icon": "$(question)" },
       { "command": "pair.addRevisionFeedback", "title": "Request Change to Selected Lines", "category": "Pair", "icon": "$(comment)" },
-      { "command": "pair.saveAskComment", "title": "Save question", "category": "Pair", "enablement": "!commentIsEmpty" },
-      { "command": "pair.saveRevisionComment", "title": "Save change request", "category": "Pair", "enablement": "!commentIsEmpty" },
+      { "command": "pair.saveAskComment", "title": "Save question draft", "category": "Pair", "enablement": "!commentIsEmpty" },
+      { "command": "pair.saveRevisionComment", "title": "Save change request draft", "category": "Pair", "enablement": "!commentIsEmpty" },
       { "command": "pair.editDraft", "title": "Edit draft", "category": "Pair", "icon": "$(edit)" },
       { "command": "pair.removeDraft", "title": "Remove draft", "category": "Pair", "icon": "$(trash)" },
+      { "command": "pair.sendQuestion", "title": "Send question", "category": "Pair", "icon": "$(send)", "enablement": "pair.canSendFeedback" },
       { "command": "pair.sendFeedback", "title": "Send Feedback Batch", "category": "Pair", "icon": "$(send)", "enablement": "pair.canSendFeedback" },
       { "command": "pair.openFeedback", "title": "Open Anchored Feedback", "category": "Pair" },
       { "command": "pair.addressFeedback", "title": "Mark Feedback Addressed", "category": "Pair" },
@@ -79,9 +80,11 @@
         { "command": "pair.removeDraft", "when": "commentController == pair && comment == pairDraftComment", "group": "inline" }
       ],
       "comments/commentThread/title": [
+        { "command": "pair.sendQuestion", "when": "commentController == pair && commentThread == pairDraftQuestion", "group": "inline@1" },
         { "command": "pair.reviewDesk", "when": "commentController == pair", "group": "inline" }
       ],
       "commandPalette": [
+        { "command": "pair.sendQuestion", "when": "false" },
         { "command": "pair.saveAskComment", "when": "false" },
         { "command": "pair.saveRevisionComment", "when": "false" },
         { "command": "pair.editDraft", "when": "false" },

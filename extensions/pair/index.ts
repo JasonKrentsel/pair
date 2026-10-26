@@ -291,8 +291,9 @@ export default function pairExtension(pi: ExtensionAPI) {
       const current = active(ctx);
       if (params.action === "feedback") {
         if (!params.replies) throw new Error("Supply replies with threadId and concise Markdown text.");
-        permissions.replyFeedback(ctx, params.replies);
-        return { content: [{ type: "text", text: `Saved ${params.replies.length} section ${params.replies.length === 1 ? "answer" : "answers"}.` }], details: { phase: current.phase,
+        const feedback = permissions.replyFeedback(ctx, params.replies);
+        const next = feedback.resume ? `\nNow call pair_step with only ${JSON.stringify({ resume: feedback.resume })} to restore this unchanged step's approval controls. No code or new proposal is needed; human approval is still required.` : "";
+        return { content: [{ type: "text", text: `Saved ${params.replies.length} section ${params.replies.length === 1 ? "answer" : "answers"}.` + next }], details: { phase: current.phase,
           feedback: params.replies.length, markdown: params.replies.map(reply => `**${reply.threadId}**\n\n${reply.text}`).join("\n\n"),
         } };
       } else if (params.action === "checkpoint") {

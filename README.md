@@ -4,9 +4,11 @@ Pair adds an explanation and a permission decision to the next coherent step. Re
 
 ## Current status
 
+Version 0.6.0 supports mixed steps: 1–8 ordered edits, writes, and commands across at most four files, with an explanation per action. Inline questions suspend the step for an answer and restore the same exact proposal for explicit approval. Questions can be sent directly from their native thread; Review Desk shows answers before optional code excerpts. Delayed decisions from an earlier approval cycle are rejected.
+
 Version 0.5.2 calls the approval unit a **step** and each edit, write, or command an **action**. It includes the 0.5.1 Review Desk fixes: show the proposal before comments exist, display a labeled inline overview when per-file explanations are absent, and reconnect automatically when Pi replaces its listener with a single matching session.
 
-Version 0.5.0 adds native VS Code section comments and a Review Desk. Draft questions and requested corrections locally, then send them as one batch. Questions pause edits for discussion; requested corrections retain unaffected proposed files and require fresh approval. The right sidebar manages the current decision; the Review Desk opens in the editor area.
+Version 0.5.0 adds native VS Code section comments and a Review Desk. Draft questions and requested corrections locally, then send them as one batch. Question-only feedback returns to approval after the answer; requested corrections retain unaffected proposed files and require fresh approval. The right sidebar manages the current decision; the Review Desk opens in the editor area.
 
 Version 0.4.0 adds a shared checkpoint and human constraints panel in Pi and VS Code. The two broad skills now favor proportional design, coherent edits, focused verification, and concise milestone reports. Existing step approvals remain exact and one-use.
 
@@ -22,7 +24,7 @@ Version 0.3 adds a VS Code companion with native, read-only diffs, workspace lan
 
 Use /pair to enable Pair in a new conversation, or /pair on to enable it explicitly. No goal form or design document is required. Existing active Pair sessions use the new permission behavior after reload.
 
-For a meaningful step, the agent calls pair_step with a title, concise why, and a changes array. A step can contain edits/writes to 1–4 distinct files, or one standalone shell command. Combine multiple replacements to the same file in one edit entry. Commands and file operations cannot yet be mixed in one step. The changes array and legacy single change field retain their existing names for compatibility.
+For a meaningful step, the agent calls pair_step with a title, concise why, and a changes array. A step can contain 1–8 ordered edits, writes, and bash/powershell commands, with at most four distinct file entries. Each action carries its own explanation. Commands run where listed and can consume earlier writes. Combine multiple replacements to the same file in one edit entry. File baselines are rechecked before each action; if a command alters a later file, execution stops before applying its stale edit. Actions depending on unknown generated content need a later step after inspecting that content. The changes array and legacy single change field retain their existing names for compatibility.
 
 The centered review fits its content. File tabs leave room for syntax-colored code; an optional sidebar is available on wide terminals. Unified and adaptive side-by-side diffs show line numbers, changed-word emphasis, and searchable hunks. The short explanation remains visible and its full text is reachable. Decision controls stay fixed. Commands appear once with their working directory.
 
@@ -30,7 +32,7 @@ The centered review fits its content. File tabs leave room for syntax-colored co
 - **d — Deny:** execute nothing and stop the turn.
 - **n — Deny with note:** execute nothing and explain what should change.
 - **Escape:** deny from the main review. Inside note entry, return to the still-pending review.
-- **Left/Right, Tab/Shift+Tab, or 1–4:** select a file; each keeps its own scroll position.
+- **Left/Right, Tab/Shift+Tab, or 1–8:** select an action; each keeps its own scroll position.
 - **[ / ]:** previous/next changed section. **i:** full explanation; Escape returns.
 - **/**: search; **f / F:** next/previous match. **w:** wrap. **s:** unified/split. **t:** sidebar. **?:** help.
 - **v:** open the selected change in the VS Code companion. Without the companion, open temporary before/proposed snapshots and decide in Pi. Snapshot edits never alter the execution payload.
@@ -44,7 +46,7 @@ A denial note can request a revision, skip an action, or ask for discussion. A r
 
 Install the local companion from `vscode/` with `npm run package:vscode`, then install the generated VSIX in VS Code. Use `/pair code` to open Pi's current working directory in VS Code and focus this session. A single matching session connects automatically; multiple sessions have an explicit selector. The next proposal opens its explanation, file list, and native diff. `pair.openReviewAutomatically` controls automatic opening.
 
-The sidebar keeps **Approve step**, **Deny**, and **Deny with note** available while the diff scrolls. Approval covers the complete listed step. Commands display their exact text and working directory. Approving in either interface resolves the same request once; the result appears in both. Closing VS Code leaves the Pi request pending. After Pi reloads, use `/pair code` to reconnect; saved results are read-only.
+The sidebar keeps **Approve step**, **Deny**, and **Deny with note** available while the diff scrolls. Approval covers the complete listed step. Commands display their exact text and working directory. Approving in either interface resolves the same request once; the result appears in both. Closing VS Code leaves the Pi request pending. A single replacement Pi listener reconnects automatically; use `/pair code` to reveal the review. saved results are read-only.
 
 Diffs inherit the actual file's language mode or workspace file associations for a new file, using your VS Code theme and font. Virtual documents provide syntax highlighting, but language servers requiring real project files may not provide semantic colors or IntelliSense. A modified preview cannot be approved. VS Code approval also blocks unsaved affected source buffers; save or discard those edits before approving. Pi's terminal only checks on-disk state and cannot see unsaved editor buffers.
 
@@ -54,13 +56,13 @@ The connection is authenticated and restricted to the local machine and matching
 
 Select lines in a Pair before/proposed diff and use **Ask about section** or **Request section change**. Native comment threads keep the feedback beside the exact snapshot. You can edit or discard drafts before sending; the sidebar shows drafts and unresolved threads. Open **Review Desk** for a larger overview, original anchors, answers, revision comparisons, and addressed/open controls. Opening it uses the active editor group and leaves your right sidebar in place.
 
-**Send feedback** sends one batch and closes the pending approval without applying any files. If any comment asks a question, Pi answers and waits for your next chat turn. A batch containing only requested corrections lets Pi prepare a revised proposal. It can send just the replacement files using `revises`; Pair retains the other draft files locally, checks every original file, and shows the complete proposal for a new decision. There is no partial-hunk approval in this version. Marking feedback addressed is a human bookkeeping action, never permission to run.
+**Send question** sends one inline question; **Send feedback** sends a batch. Question-only feedback temporarily suspends approval without applying anything. Pi records its answers and uses a reference-only `pair_step {resume: reviewId}` call to restore the same exact proposal as **Ready to approve**. Resumption does not resend source code or grant permission. A batch requesting revisions needs a corrected proposal; mixed questions/revisions first pause for discussion. The agent can send replacement files using `revises`; Pair retains other actions in their original order and rechecks every file. Changing a command or action order requires a fresh complete step. There is no partial-hunk approval in this version. Marking feedback addressed is a human bookkeeping action, never permission to run.
 
 Per-file rationales and optional section explanations use Markdown, including inline code and fenced examples. Comment anchors remain attached to their original immutable snapshots. Revised content does not silently inherit the old line range. The Desk can compare the original proposal with the later proposal; if the archive was evicted, it reports that instead of inventing a match.
 
 Drafts, navigation, selection, rendering, polling, and addressed/open changes make no model calls. Submitted feedback enters through the pending `pair_step` result exactly once; answers use `pair_work` action `feedback`. Stable tool definitions and the system contract contain no changing UI state. Local review events and full snapshots are excluded from model-facing content; reload/compaction adds only a bounded recovery brief. Cache reuse still depends on the model provider and Pi's compaction behavior.
 
-The local archive retains up to eight reviews and eighty threads within a 16 MiB snapshot budget. Draft storage is bounded and scoped to the project and conversation. No pending approval survives reload. `/pair new` clears this task's feedback lineage.
+The local archive retains up to eight reviews and eighty threads within a 16 MiB snapshot budget. Draft storage is bounded and scoped to the project and conversation. No pending approval survives reload. Earlier **Discussion requested** results remain reference-only; ask Pi to propose the saved step again for approval. `/pair new` clears this task's feedback lineage.
 
 ## Checkpoint and constraints
 
@@ -83,7 +85,7 @@ All files are checked against their previewed snapshots before execution. Remain
 
 If one action fails, later actions do not run. Completed or partial edits remain; there is no automatic rollback. History lists per-file outcomes and actual diffs. A repair or retry needs fresh approval. No pending execution permit is restored after restart.
 
-Choose groups by understandable behavior: extracting a prompt can include creating its Markdown file and wiring the loader. Retry policy and compaction remain separate decisions. The four-file cap and standalone-command rule bound groups, but do not prove that an agent's proposed change is conceptually small.
+Choose steps by understandable behavior: extracting a prompt can include creating its Markdown file and wiring the loader. Retry policy and compaction remain separate decisions. The eight-action and four-file limits bound a step; they do not make unrelated work one understandable decision. Every action in a mixed step must include its own explanation.
 
 ## Conversation history
 
@@ -121,7 +123,7 @@ Arguments, approvals, and results remain in local Pi history. Denial does not ro
 
 ## Source layout
 
-- extensions/pair/permissions.ts — grouped requests, one-use permission, ordered execution, and denial feedback.
+- extensions/pair/permissions.ts — step requests, one-use permission, ordered execution, and denial feedback.
 - extensions/pair/changes.ts — native in-memory previews, snapshot checks, and change statistics.
 - extensions/pair/review-model.ts and diff-view.ts — structured hunks, syntax highlighting, line numbers, and unified/split rendering.
 - extensions/pair/review.ts — fullscreen review component, navigation, search, mouse controls, and inline feedback.

@@ -9,7 +9,7 @@ export interface SavedProposal {
   changes: ChangeInput[];
   before: Record<string, string>;
 }
-const validator = Compile(Type.Array(ChangeSchema, { minItems: 1, maxItems: 4 }));
+const validator = Compile(Type.Array(ChangeSchema, { minItems: 1, maxItems: 8 }));
 const key = (root: string, change: ChangeInput) => {
   if (!("path" in change)) return "command";
   const path = normalizedFile(root, change.path);
@@ -30,15 +30,18 @@ export function reviseProposal(root: string, previous: SavedProposal, replacemen
   }
   const seen = new Set<string>();
   const changes = structuredClone(previous.changes);
+  const hasCommands = changes.some(change => !("path" in change));
   for (const replacement of replacements) {
+    if (!("path" in replacement)) throw new Error("To revise commands or action order, submit the complete step without revises.");
     const identity = key(root, replacement);
     if (seen.has(identity)) throw new Error("Supply each revised file once.");
     seen.add(identity);
     const index = changes.findIndex(change => key(root, change) === identity);
+    if (index < 0 && hasCommands) throw new Error("To add an action to a step containing commands, submit the complete ordered step without revises.");
     if (index < 0) changes.push(structuredClone(replacement));
     else changes[index] = structuredClone(replacement);
   }
-  if (!validator.Check(changes)) throw new Error("A revision still needs 1–4 valid file changes, or one command.");
+  if (!validator.Check(changes) || changes.filter(change => "path" in change).length > 4) throw new Error("A revision still needs 1–8 ordered actions and at most four file edits/writes.");
   return changes;
 }
 
@@ -52,7 +55,8 @@ export function restoredProposal(value: unknown, root: string): SavedProposal | 
   if (entries.length > 4 || entries.some(([path, hash]) => typeof hash !== "string" || hash.length > 128 || typeof path !== "string")) return;
   try {
     const files = item.changes.filter((change): change is ChangeInput & { path: string } => "path" in change).map(change => normalizedFile(root, change.path));
-    if (files.length !== entries.length || files.some(path => !Object.hasOwn(item.before, path))) return;
+    const identities = files.map(path => process.platform === "win32" ? path.toLowerCase() : path);
+    if (new Set(identities).size !== files.length || files.length !== entries.length || files.some(path => !Object.hasOwn(item.before, path))) return;
     return structuredClone(item);
   } catch { return; }
 }

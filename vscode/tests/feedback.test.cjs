@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { anchorFor, newDraft, submissionFor, loadLocalState, validFeedback } = require('../feedback-model.cjs');
-const { markdown, renderDesk } = require('../feedback-ui.cjs');
+const { markdown, renderDesk, submissionLabel, submissionEffect } = require('../feedback-ui.cjs');
 const { createFeedbackController } = require('../feedback-controller.cjs');
 
 const proposal = (overrides = {}) => ({ id: 'review-one', revision: 1, fingerprint: 'a'.repeat(64), pending: true, title: 'Share answer validation', why: 'Reject incomplete results before returning them.', status: 'Awaiting permission',
@@ -196,7 +196,7 @@ test('webview Markdown escapes HTML and keeps command links inert while showing 
   const draft = newDraft(proposal(), { changeIndex: 0, side: 'proposed', startLine: 2, endLine: 2, intent: 'ask', text });
   const htmlDesk = renderDesk({ drafts: [draft], review: proposal(), feedback: { version: 1, revision: 0, scopeId: 'scope', reviews: [] }, connected: true, trusted: true });
   assert.ok(!htmlDesk.includes('<img')); assert.match(htmlDesk, /default-src 'none'/); assert.match(htmlDesk, /Drafts · 1/);
-  assert.match(htmlDesk, /scrollY/); assert.match(htmlDesk, /Marking feedback addressed does not approve execution/);
+  assert.match(htmlDesk, /scrollY/); assert.match(htmlDesk, /They do not deny the step or request changes/);
 });
 
 test('saved local state and protocol reject malformed drafts, ranges and annotations safely', () => {
@@ -236,5 +236,103 @@ test('proposals without per-file explanations still show a clearly labeled expan
     assert.equal(overview.comments[0].body.value, f.state.review.why);
     assert.equal(overview.collapsibleState, f.vscode.CommentThreadCollapsibleState.Expanded);
     assert.equal(f.requests.length, 0);
+  } finally { f.close(); }
+});
+
+test('sending one inline question preserves other drafts and retries the exact question', async () => {
+  const f = fixture();
+  try {
+    const doc = f.makeDocument();
+    const question = await f.controller.addFeedback('ask', { ...doc, text: 'Why normalize?' });
+    const revision = await f.controller.addFeedback('revise', { ...doc, text: 'Keep the caller name.' });
+    const questionThread = f.native.find(thread => thread.pairId === question.id);
+    assert.equal(questionThread.contextValue, 'pairDraftQuestion');
+    f.setTransport(async () => { throw new Error('Question timed out'); });
+    await assert.rejects(f.controller.sendQuestion(questionThread), /timed out/);
+    assert.deepEqual(f.requests[0][3].comments.map(comment => comment.id), [question.id]);
+    f.state.review = { ...f.state.review, pending: false, status: 'Answering questions' };
+    f.controller.sync();
+    assert.equal(questionThread.contextValue, 'pairDraftQuestion', 'uncertain submission remains retryable inline after Pi accepted the question');
+    const first = structuredClone(f.requests[0][3]);
+    f.setTransport(async () => ({}));
+    await f.controller.sendQuestion(questionThread);
+    assert.deepEqual(f.requests[1][3], first);
+    assert.deepEqual(f.controller.getState().drafts.map(draft => draft.id), [revision.id]);
+    await assert.rejects(f.controller.sendQuestion(revision.id), /question draft/);
+    assert.equal(f.requests.length, 2);
+  } finally { f.close(); }
+});
+
+test('questions and new answers expand inline once while waiting drafts retain their exact identity', async () => {
+  const f = fixture();
+  try {
+    const doc = f.makeDocument();
+    const question = await f.controller.addFeedback('ask', { ...doc, text: 'Why normalize?' });
+    const other = await f.controller.addFeedback('revise', { ...doc, text: 'Keep the caller name.' });
+    await f.controller.removeDraft(question.id);
+    f.state.review = { ...f.state.review, pending: false, status: 'Answering questions' };
+    f.state.feedback.threads = [{ ...question, status: 'submitted', batchId: 'question-batch' }];
+    f.controller.sync();
+    const thread = f.native.find(value => !value.disposed && value.pairId === question.id);
+    assert.equal(thread.collapsibleState, f.vscode.CommentThreadCollapsibleState.Expanded);
+    assert.equal(f.controller.getState().drafts.find(draft => draft.id === other.id).outdated, false);
+    thread.collapsibleState = f.vscode.CommentThreadCollapsibleState.Collapsed;
+    f.controller.sync();
+    assert.equal(thread.collapsibleState, f.vscode.CommentThreadCollapsibleState.Collapsed);
+    f.state.feedback.threads[0].reply = 'Whitespace-only values become empty.';
+    f.state.feedback.threads[0].status = 'answered';
+    f.controller.sync();
+    assert.equal(thread.collapsibleState, f.vscode.CommentThreadCollapsibleState.Expanded);
+    assert.equal(thread.comments[1].body.value, 'Whitespace-only values become empty.');
+    thread.collapsibleState = f.vscode.CommentThreadCollapsibleState.Collapsed;
+    f.controller.sync();
+    assert.equal(thread.collapsibleState, f.vscode.CommentThreadCollapsibleState.Collapsed);
+    assert.equal(f.requests.length, 0, 'rendering questions and replies never calls a model');
+  } finally { f.close(); }
+});
+
+test('question states and intent labels explain approval without calling a paused step complete', () => {
+  const question = newDraft(proposal(), { changeIndex: 0, side: 'proposed', startLine: 2, endLine: 2, intent: 'ask', text: 'Why trim?' });
+  assert.equal(submissionLabel([question]), 'Send question');
+  assert.equal(submissionLabel([{ intent: 'revise' }]), 'Request revision');
+  assert.match(submissionEffect([question, { intent: 'revise' }]), /needs revision before approval/);
+  const options = { drafts: [question], review: proposal({ pending: false, status: 'Answering questions' }), feedback: { revision: 0, scopeId: 'scope', reviews: [] }, connected: true, trusted: true };
+  const waiting = renderDesk(options);
+  assert.match(waiting, /step is unchanged/);
+  assert.doesNotMatch(waiting, /step is complete|Latest step/);
+  assert.match(waiting, /data-action="send-question"[^>]*disabled/);
+  assert.ok(waiting.indexOf('Your question') < waiting.indexOf('<summary>Selected code'));
+  assert.match(renderDesk({ ...options, review: proposal({ status: 'Ready to approve' }) }), /use Approve step when ready/);
+  assert.match(renderDesk({ ...options, review: proposal({ pending: false, status: 'Revision requested' }) }), /approve the revised step/);
+});
+
+test('mixed step overview keeps files and commands in execution order with individual explanations', () => {
+  const review = proposal();
+  review.changes.splice(1, 0, { label: 'npm run check', kind: 'bash', command: 'npm run check', cwd: 'C:/project', why: 'Verify the new module before updating the caller.' });
+  const html = renderDesk({ review, feedback: { revision: 0, scopeId: 'scope', reviews: [] }, connected: true, trusted: true });
+  assert.match(html, /Actions in execution order/);
+  assert.ok(html.indexOf('1. src/answer.ts') < html.indexOf('2. bash command'));
+  assert.ok(html.indexOf('2. bash command') < html.indexOf('3. src/index.ts'));
+  assert.match(html, /<pre>npm run check<\/pre>/);
+  assert.match(html, /Verify the new module before updating the caller/);
+});
+
+test('command snapshots expose anchored explanations and support inline questions without a proposed file', async () => {
+  const f = fixture();
+  try {
+    f.state.review.changes = [{ label: 'npm run check', kind: 'bash', command: 'npm run check\nnpm run lint', why: 'Check types and style before packaging.', annotations: [{ title: 'Check style', why: 'Lint runs only after type checking.', startLine: 2, endLine: 2 }] }];
+    const doc = f.makeDocument(f.state.review, 0, 'command');
+    const explanations = f.native.filter(thread => thread.contextValue === 'pairExplanation');
+    assert.equal(explanations.length, 2);
+    assert.equal(explanations[0].label, 'Why this command runs');
+    assert.equal(explanations[0].comments[0].body.value, 'Check types and style before packaging.');
+    assert.equal(explanations[1].range.start.line, 1);
+    const draft = await f.controller.addFeedback('ask', { ...doc, text: 'Why both checks?' });
+    assert.equal(draft.side, 'command');
+    assert.equal(draft.excerpt, 'npm run lint');
+    assert.equal(f.requests.length, 0);
+    await f.controller.sendQuestion(draft.id);
+    assert.equal(f.requests[0][3].comments[0].side, 'command');
+    assert.equal(f.requests[0][3].comments[0].startLine, 2);
   } finally { f.close(); }
 });

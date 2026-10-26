@@ -7,13 +7,14 @@ export async function reviewWithCompanion(
   bridge: PairReviewBridge | undefined, root: string, ctx: ExtensionContext,
   title: string, why: string, changes: ChangePreview[], signal: AbortSignal | undefined,
   options: PermissionViewOptions, validate: () => void, terminal = showPermission,
-  metadata?: { revises?: string; onPublished?: (review: BridgeReview) => void },
+  metadata?: { revises?: string; resume?: string; onPublished?: (review: BridgeReview) => void },
 ): Promise<PermissionDecision> {
   if (!bridge) return terminal(ctx, title, why, changes, signal, options);
   if (signal?.aborted) return { action: "deny" };
   try { await bridge.start(root); }
   catch {
     if (signal?.aborted) return { action: "deny" };
+    if (metadata?.resume) throw new Error("The question review connection is unavailable. Reconnect before resuming this step.");
     validate();
     ctx.ui.notify("VS Code connection unavailable. Review this change in Pi.", "warning");
     return terminal(ctx, title, why, changes, signal, options);
@@ -26,14 +27,17 @@ export async function reviewWithCompanion(
   let resolveDecision!: (decision: PermissionDecision) => void;
   let resolvedDecision: PermissionDecision | undefined;
   const remote = new Promise<PermissionDecision>((resolve) => { resolveDecision = resolve; });
-  const published = bridge.publish({ title, why, changes, revises: metadata?.revises }, (decision) => {
+  const onDecision = (decision: PermissionDecision) => {
     resolvedDecision = decision;
     resolveDecision(decision);
     closeTerminal.abort();
-  }, validate);
+  };
+  const published = metadata?.resume ? bridge.resume(metadata.resume, onDecision, validate)
+    : bridge.publish({ title, why, changes, revises: metadata?.revises }, onDecision, validate);
+  const gate = bridge.decisionVersion;
   try { metadata?.onPublished?.(published); }
   catch (error) { if (bridge.current?.id === published.id) bridge.cancel(); throw error; }
-  const ownsReview = () => bridge.current?.id === published.id;
+  const ownsReview = () => bridge.current?.id === published.id && bridge.decisionVersion === gate;
   const abort = () => {
     if (ownsReview()) bridge.cancel();
     resolveDecision({ action: "deny" });

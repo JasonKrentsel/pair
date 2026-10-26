@@ -36,7 +36,7 @@ test("nested replacements and size/range errors identify what must change", () =
 
 test("malformed root values and excessive groups fail before execution with bounded output", () => {
   for (const value of [null, [], "PRIVATE_SOURCE_MARKER", {}, { ...valid, changes: "PRIVATE_SOURCE_MARKER" }]) failure(step, value);
-  assert.match(failure(step, { ...valid, changes: Array.from({ length: 5 }, () => ({ tool: "write", path: "a.ts", content: "x" })) }), /changes: include at most 4 items/);
+  assert.match(failure(step, { ...valid, changes: Array.from({ length: 9 }, () => ({ tool: "write", path: "a.ts", content: "x" })) }), /changes: include at most 8 items/);
   failure(step, { ...valid, title: {}, why: {}, changes: [null, {}, {}, {}] });
 });
 

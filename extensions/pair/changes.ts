@@ -61,11 +61,21 @@ export function filePreview(path: string, before: string, after: string, kind: s
 
 /** Prepare every file before requesting permission. No filesystem writes occur here. */
 export async function prepareChanges(root: string, changes: ChangeInput[], signal?: AbortSignal): Promise<PreparedChange[]> {
-  if (!changes.length || changes.length > 4) throw new Error("Choose one coherent step involving 1–4 files, or one standalone command.");
-  if (changes.length > 1 && changes.some((change) => !('path' in change))) {
-    throw new Error("Review shell commands separately. A multi-file permission can contain only edits and writes.");
-  }
+  if (!changes.length || changes.length > 8) throw new Error("Choose one coherent step with 1–8 ordered actions.");
+  if (changes.filter(change => "path" in change).length > 4) throw new Error("A step can edit or write at most four distinct files. Split larger work into another step.");
   const paths = new Set<string>();
+  // Diagnose structural problems before explanations or file preview work.
+  for (const change of changes) {
+    if (!("path" in change)) continue;
+    const path = normalizedFile(root, change.path);
+    const key = process.platform === "win32" ? path.toLowerCase() : path;
+    if (paths.has(key)) throw new Error(`Combine all replacements in ${path} into one edit entry.`);
+    paths.add(key);
+  }
+  if (paths.size && paths.size < changes.length) {
+    const missing = changes.findIndex(change => !change.why?.trim());
+    if (missing >= 0) throw new Error(`Action ${missing + 1}: add why explaining this action before requesting approval.`);
+  }
   const prepared: PreparedChange[] = [];
   for (const change of changes) {
     signal?.throwIfAborted();
@@ -75,9 +85,6 @@ export async function prepareChanges(root: string, changes: ChangeInput[], signa
       continue;
     }
     const path = normalizedFile(root, change.path);
-    const key = process.platform === "win32" ? path.toLowerCase() : path;
-    if (paths.has(key)) throw new Error(`Combine all replacements in ${path} into one edit entry.`);
-    paths.add(key);
     const absolute = projectFile(root, path);
     const before = snapshot(root, path);
     let after: string;

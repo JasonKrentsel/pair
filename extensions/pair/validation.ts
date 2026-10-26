@@ -57,7 +57,7 @@ export function preparePairArguments<T extends TSchema>(tool: "pair_step" | "pai
       return format(error, "", choices);
     });
     if (tool === "pair_step" && object(args) && Array.isArray(args.changes)) {
-      for (const [index, change] of args.changes.slice(0, 4).entries()) {
+      for (const [index, change] of args.changes.slice(0, 8).entries()) {
         const where = `Action ${index + 1}`;
         if (!object(change)) { issues.push(`${where}: expected an object with tool and its input fields.`); continue; }
         const selected = typeof change.tool === "string" ? byTool.get(change.tool) : undefined;

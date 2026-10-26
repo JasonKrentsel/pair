@@ -14,11 +14,12 @@ import { PROPOSAL_ENTRY, restoredProposal, reviseProposal, saveProposal, type Sa
 export const REVIEW_EVENT_ENTRY = "pair-review-event-v1";
 
 const Step = Type.Object({
-  title: Type.String({ minLength: 1, maxLength: 140, description: "One understandable decision or behavior change." }),
-  why: Type.String({ minLength: 1, maxLength: 1800, description: "Explain purpose, mechanics, and meaningful choices concisely. Usually 1–3 sentences; avoid repeating the title." }),
-  changes: Type.Optional(Type.Array(ChangeSchema, { minItems: 1, maxItems: 4, description: "Related edits/writes to 1–4 distinct files, or one standalone command. With revises, include only replacement files; other proposed files are retained." })),
+  title: Type.Optional(Type.String({ minLength: 1, maxLength: 140, description: "One understandable decision or behavior change. Omit with resume." })),
+  why: Type.Optional(Type.String({ minLength: 1, maxLength: 1800, description: "Explain purpose, mechanics, and meaningful choices concisely. Usually 1–3 sentences; omit with resume." })),
+  changes: Type.Optional(Type.Array(ChangeSchema, { minItems: 1, maxItems: 8, description: "1–8 ordered edits, writes, or commands; at most four distinct files. With revises, replace files in place; retain other actions. Command or order changes need a fresh complete step." })),
   revises: Type.Optional(Type.String({ minLength: 8, maxLength: 128, description: "Exact review ID from section feedback. Retains unchanged proposed files and requires fresh approval." })),
-});
+  resume: Type.Optional(Type.String({ minLength: 8, maxLength: 128, description: "After answering a question-only batch, reopen that exact retained step for human approval. Supply only resume; no code, title, why, or changes." })),
+}, { anyOf: [{ required: ["title", "why"] }, { required: ["resume"] }] });
 
 interface Permit { tool: string; input: string; root: string; path?: string; hash?: string }
 
@@ -89,8 +90,9 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
   const rejected = new Set<string>();
   let stopThisRun = false;
   let revisionNote: string | undefined;
+  let questionPause: { reviewId: string; generation: number; threadIds: string[] } | undefined;
   let generation = 0;
-  const clear = () => { permits.clear(); rejected.clear(); stopThisRun = false; revisionNote = undefined; generation++; bridge?.cancel(); };
+  const clear = () => { permits.clear(); rejected.clear(); stopThisRun = false; revisionNote = undefined; questionPause = undefined; generation++; bridge?.cancel(); };
   pi.on("before_agent_start", clear);
   const restoreReview = (_event: unknown, ctx: ExtensionContext) => {
     clear(); latest = undefined; focusPending = undefined;
@@ -118,13 +120,17 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
   pi.on("session_start", restoreReview);
   pi.on("session_tree", restoreReview);
   // Automatic compaction is still the same human turn: keep denials and revision feedback.
-  pi.on("session_compact", () => { permits.clear(); generation++; bridge?.cancel(); recoveryPending = true; });
+  pi.on("session_compact", () => { permits.clear(); questionPause = undefined; generation++; bridge?.cancel(); recoveryPending = true; });
   pi.on("session_shutdown", async () => { clear(); await bridge?.close(); });
 
   const guard = (event: ToolCallEvent) => {
     const readOnly = ["read", "grep", "find", "ls"].includes(event.toolName)
       || event.toolName === "pair_work" && ["status", "checkpoint", "feedback"].includes((event.input as { action?: string }).action ?? "");
-    if (stopThisRun && !readOnly) return { block: true as const, reason: "Pair: the human denied this step. Address their feedback and stop; do not retry through another tool." };
+    const input = event.input as Record<string, unknown>;
+    const resumesQuestion = event.toolName === "pair_step" && questionPause?.generation === generation && input.resume === questionPause.reviewId;
+    if (stopThisRun && !readOnly && !resumesQuestion) return { block: true as const, reason: questionPause
+      ? "Pair: answer the inline questions, then resume the exact retained step for human approval. Other mutations remain paused."
+      : "Pair: the human denied this step. Address their feedback and stop; do not retry through another tool." };
     const permit = event.parentToolCallId ? permits.get(event.parentToolCallId) : undefined;
     if (permit && event.toolName === permit.tool && canonical(event.input) === permit.input) {
       permits.delete(event.parentToolCallId!);
@@ -143,30 +149,46 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
 
   pi.registerTool<typeof Step, StepDetails>({
     name: "pair_step", label: "Step", parameters: Step, executionMode: "sequential", renderShell: "self",
-    description: "Explain and request approval for one coherent step across up to four files, or one command. Approved actions run in order; failure stops the rest without rollback. Deny stops; a note permits a revised proposal for fresh approval. History reports success.",
+    description: "Explain and request approval for one coherent step of 1–8 ordered edits, writes, or commands across up to four files. Approved actions run in order; failure stops the rest without rollback. Deny stops; a note permits a revised proposal for fresh approval. History reports success.",
     prepareArguments: preparePairArguments("pair_step", Step, normalizeStepArguments),
     reachesTools: (input) => {
-      const changes = [...(input.changes as { tool?: string }[] ?? []), ...(typeof input.revises === "string" ? proposals.get(input.revises)?.changes ?? [] : [])];
+      const retainedId = typeof input.resume === "string" ? input.resume : typeof input.revises === "string" ? input.revises : undefined;
+      const changes = [...(input.changes as { tool?: string }[] ?? []), ...(retainedId ? proposals.get(retainedId)?.changes ?? [] : [])];
       return [...new Set(changes.flatMap((change) => change.tool ? [change.tool] : []))];
     },
     async execute(id, params, signal, update, ctx) {
       const { root } = options.active(ctx);
       const requestGeneration = generation;
       if (!ctx.hasUI || ctx.mode !== "tui") throw new Error("Step permissions require Pi's interactive terminal.");
-      if (stopThisRun) throw new Error("The human denied this step. Stop until they continue.");
-      if (!params.changes && !params.revises) throw new Error("Supply changes, or a review ID in revises to retain its proposed files.");
-      const previous = params.revises ? proposals.get(params.revises) : undefined;
-      if (params.revises && (!previous || latest?.reviewId !== params.revises || !bridge?.archived(params.revises))) throw new Error("That is not the latest retained proposal. Read the current files and prepare a fresh step.");
-      const inputs = previous ? reviseProposal(root, previous, params.changes) : params.changes!;
+      if (params.resume && (params.title !== undefined || params.why !== undefined || params.changes !== undefined || params.revises !== undefined))
+        throw new Error("Supply only resume to reopen the exact retained step; propose changed actions separately.");
+      const pause = params.resume ? questionPause : undefined;
+      if (params.resume && (!pause || pause.reviewId !== params.resume || pause.generation !== generation || !bridge?.questionPending))
+        throw new Error("This question pause is no longer resumable. Request a fresh step.");
+      if (pause && !pause.threadIds.every(id => bridge?.feedback.threads.some(thread => thread.id === id && !!thread.reply)))
+        throw new Error("Answer every question before resuming the step.");
+      if (stopThisRun && !pause) throw new Error("The human denied this step. Stop until they continue.");
+      if (!params.resume && (!params.title?.trim() || !params.why?.trim())) throw new Error("Supply title and why for a new or revised step.");
+      if (!params.changes && !params.revises && !params.resume) throw new Error("Supply changes, revises, or resume for an answered question pause.");
+      const retainedId = params.resume ?? params.revises;
+      const previous = retainedId ? proposals.get(retainedId) : undefined;
+      if (retainedId && (!previous || latest?.reviewId !== retainedId || !bridge?.archived(retainedId))) throw new Error("That is not the latest retained proposal. Read the current files and prepare a fresh step.");
+      let inputs: SavedProposal["changes"];
+      try { inputs = previous ? reviseProposal(root, previous, params.changes) : params.changes!; }
+      catch (error) { if (params.resume) { questionPause = undefined; bridge?.cancel(); } throw error; }
       for (const change of inputs) {
         if (!ctx.tools.some((entry) => entry.name === change.tool)) throw new Error(`The ${change.tool} tool is unavailable.`);
       }
-      const prepared = await prepareChanges(root, inputs, signal);
+      let prepared: Awaited<ReturnType<typeof prepareChanges>>;
+      try { prepared = await prepareChanges(root, inputs, signal); }
+      catch (error) { if (params.resume) { questionPause = undefined; bridge?.cancel(); } throw error; }
       if (requestGeneration !== generation) throw new Error("The session changed while preparing the preview. Nothing was published or executed.");
       const fingerprint = canonical(prepared.map((change) => ({ tool: change.tool, input: change.input })));
       if (rejected.has(fingerprint)) throw new Error("This exact step was denied. Incorporate the note into a different change or ask a clarification question; do not repeat the same permission request.");
       const previews = prepared.map((change) => change.preview);
-      const details: StepDetails = { title: params.title.trim(), why: params.why.trim(), status: "Awaiting permission", changes: previews, revises: params.revises };
+      const details: StepDetails = { title: params.resume ? previous!.title : params.title!.trim(), why: params.resume ? previous!.why : params.why!.trim(),
+        status: params.resume ? "Ready to approve" : "Awaiting permission", changes: previews, revises: params.revises,
+        ...(params.resume ? { reviewId: params.resume } : {}) };
       if (!details.title || !details.why) throw new Error("Explain the change and why it is needed.");
       // Keep the rationale in the dialog while pending instead of duplicating it behind the overlay.
       latest = details;
@@ -181,8 +203,9 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
         options.active(ctx);
         assertUnchanged(root, prepared);
       }, options.review ?? showPermission, {
-        revises: params.revises,
+        revises: params.revises, resume: params.resume,
         onPublished(review) {
+          if (params.resume) { questionPause = undefined; stopThisRun = false; details.reviewId = review.id; return; }
           const saved = saveProposal(review.id, root, details.title, details.why, inputs, prepared);
           pi.appendEntry(PROPOSAL_ENTRY, saved);
           retain(saved);
@@ -193,15 +216,21 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
       if (decision.action !== "approve" || signal?.aborted) {
         if (decision.feedback && !signal?.aborted) {
           const feedback = decision.feedback;
-          rejected.add(fingerprint);
+          const questionsOnly = feedback.threads.every(thread => thread.intent === "ask");
+          if (!questionsOnly) rejected.add(fingerprint);
+          questionPause = questionsOnly ? { reviewId: feedback.reviewId, generation, threadIds: feedback.threads.map(thread => thread.id) } : undefined;
           stopThisRun = feedback.intent === "ask";
           revisionNote = stopThisRun ? undefined : "Follow the submitted section feedback.";
-          const status = stopThisRun ? "Discussion requested" : "Revision requested";
+          const status = questionsOnly ? "Answering questions" : "Revision requested";
           const notes = feedback.threads.map(thread => `[${thread.id}] ${thread.intent === "ask" ? "Ask" : "Request change"}: ${thread.label}, ${thread.side} lines ${thread.startLine}–${thread.endLine}\n${thread.text}\nSelected code: ${thread.excerpt.slice(0, 600)}`).join("\n\n");
           return remember({ content: [{ type: "text", text: `Nothing was applied. Section feedback for review ${feedback.reviewId}:\n${notes}\n\n` + (stopThisRun
-            ? "Answer the questions with pair_work action feedback and replies [{threadId,text}], then stop for the human. Do not propose or execute changes this run."
-            : `Revise the affected files with pair_step revises: ${feedback.reviewId}. Include only replacement file changes; the other proposed files are retained. Explain the correction and request fresh approval.`) }],
-            details: { ...details, status, note: feedback.threads.map(thread => thread.text).join("\n"), changes: previews.map(preview => ({ ...preview, status: "Proposed — not applied" })) },
+            ? questionsOnly
+              ? `Answer every question with pair_work action feedback and replies [{threadId,text}]. Its receipt will give the exact reference-only call to resume this unchanged step for human approval. Do not resend code or execute without approval.`
+              : "Answer the questions with pair_work action feedback and replies [{threadId,text}], then stop for the human. Requested revisions still need a fresh proposal; do not resume this unchanged step."
+            : feedback.threads.some(thread => thread.side === "command")
+              ? "Prepare a fresh complete pair_step for the requested command correction. Include every ordered action and request fresh approval; command revisions cannot reuse a retained file-only replacement."
+              : `Revise the affected files with pair_step revises: ${feedback.reviewId}. Include only replacement file changes; other actions and their order are retained. Command or execution-order changes need a fresh complete step. Explain the correction and request fresh approval.`) }],
+            details: { ...details, status, note: feedback.threads.map(thread => thread.text).join("\n"), changes: questionsOnly ? previews : previews.map(preview => ({ ...preview, status: "Proposed — not applied" })) },
           }, requestGeneration);
         }
         const note = decision.note;
@@ -292,12 +321,16 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
   }, replyFeedback(ctx: ExtensionContext, replies: { threadId: string; text: string }[]) {
     options.active(ctx);
     if (!bridge) throw new Error("Section feedback is unavailable in this context.");
-    return bridge.replyFeedback(replies);
+    const feedback = bridge.replyFeedback(replies);
+    const resume = questionPause?.generation === generation && bridge.questionPending
+      && questionPause.threadIds.every(id => feedback.threads.some(thread => thread.id === id && !!thread.reply))
+      ? questionPause.reviewId : undefined;
+    return { ...feedback, resume };
   }, resetReviews(ctx: ExtensionContext) {
     clear(); latest = undefined; proposals.clear(); recoveryPending = false;
     bridge?.resetReviewEvents(projectRoot(ctx.cwd));
   }, constraintsChanged() {
-    permits.clear(); generation++; stopThisRun = true; bridge?.cancel();
+    permits.clear(); questionPause = undefined; generation++; stopThisRun = true; bridge?.cancel();
   }, async openEditor(ctx: ExtensionContext): Promise<void> {
     const { root } = options.active(ctx);
     const openingGeneration = generation;
@@ -305,7 +338,7 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
     if (!companionInstalled()) throw new Error("Install the Pair Review VS Code companion to connect this workspace.");
     await bridge.start(root);
     if (openingGeneration !== generation) throw new Error("The Pi session changed. Open its current review again.");
-    if (!bridge.current?.pending && latest) bridge.record({ title: latest.title, why: latest.why, changes: latest.changes ?? [], status: latest.status, reviewId: latest.reviewId });
+    if (!bridge.current?.pending && !bridge.questionPending && latest) bridge.record({ title: latest.title, why: latest.why, changes: latest.changes ?? [], status: latest.status, reviewId: latest.reviewId });
     bridge.requestFocus();
     await openCodeReview(root);
   }, async review(ctx: ExtensionContext): Promise<boolean> {
@@ -329,7 +362,7 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
           if (focusCurrent()) return true;
           // Another proposal may have arrived during asynchronous startup.
           // Reading history must never replace its pending decision.
-          if (bridge.current?.pending) return true;
+          if (bridge.current?.pending || bridge.questionPending) return true;
           bridge.record({ title: frozen.title, why: frozen.why, changes, status: frozen.status, reviewId: frozen.reviewId });
         }
         catch { /* Terminal review remains usable if local discovery is unavailable. */ }

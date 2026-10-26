@@ -59,7 +59,7 @@ export class ReviewComponent implements Component, Focusable {
 
   constructor(options: ReviewOptions) {
     this.options = options;
-    if (!options.changes.length) throw new Error("A review needs at least one change.");
+    if (!options.changes.length) throw new Error("A review needs at least one action.");
     this.scrolls = options.changes.map(() => new ScrollView({ render: () => [], invalidate() {} }));
     this.why = new Markdown(plain(options.why), 0, 0, getMarkdownTheme());
     this.sectionWhy = options.changes.map(change => new Markdown(plain([
@@ -107,13 +107,13 @@ export class ReviewComponent implements Component, Focusable {
     scroll.scrollTo(target);
   }
   private async openExternal() {
-    if (this.externalBusy || !this.options.onOpenExternal || this.options.changes[this.selected].diff === undefined) return;
+    if (this.externalBusy || !this.options.onOpenExternal || this.options.changes[this.selected].kind === "Result") return;
     this.externalBusy = true;
-    this.notice = "Opening the proposed diff in VS Code…";
+    this.notice = "Opening this action in VS Code…";
     this.redraw();
     try {
       await this.options.onOpenExternal(this.selected);
-      this.notice = "Diff opened in VS Code. Return here to decide.";
+      this.notice = "Action opened in VS Code. Return here to decide.";
     } catch (error) {
       this.notice = "Could not open VS Code: " + plain(error instanceof Error ? error.message : String(error));
     } finally { this.externalBusy = false; this.redraw(); }
@@ -150,10 +150,15 @@ export class ReviewComponent implements Component, Focusable {
     }
     const totalAdded = changes.reduce((sum, item) => sum + item.added, 0);
     const totalRemoved = changes.reduce((sum, item) => sum + item.removed, 0);
-    const scope = changes.every((item) => item.diff !== undefined) ? `${changes.length} ${changes.length === 1 ? "file" : "files"} · +${totalAdded} −${totalRemoved}` : resultOnly ? "Saved result" : "Command";
+    const files = changes.filter(item => item.diff !== undefined).length;
+    const commands = changes.filter(item => item.command !== undefined).length;
+    const mixed = files > 0 && commands > 0;
+    const scope = mixed ? `${changes.length} actions · ${files} ${files === 1 ? "file" : "files"} · ${commands} ${commands === 1 ? "command" : "commands"}`
+      : files ? `${files} ${files === 1 ? "file" : "files"} · +${totalAdded} −${totalRemoved}` : resultOnly ? "Saved result" : commands > 1 ? `${commands} commands` : "Command";
     const lines: string[] = [theme.fg("accent", `${this.options.readOnly ? "Review" : "Review step"} · ${scope}`), ...wrapTextWithAnsi(theme.bold(plain(this.options.title)), inner)];
     const section = change.why || change.annotations?.length ? this.sectionWhy[this.selected].render(inner) : [];
-    const whyLines = [...this.why.render(inner), ...(section.length ? ["", ...section] : [])];
+    const stepWhy = this.why.render(inner);
+    const whyLines = section.length ? [...section, "", theme.fg("muted", "Step purpose"), ...stepWhy] : stepWhy;
     if (this.mode !== "why" && this.mode !== "help") {
       if (this.mode !== "note") lines.push("");
       const whyLimit = this.mode === "note" ? 1 : 2;
@@ -164,10 +169,10 @@ export class ReviewComponent implements Component, Focusable {
     if (this.mode !== "note") lines.push("");
     if (changes.length > 1 && this.mode !== "note") {
       const tabWidth = Math.floor((inner - (changes.length - 1) * 2) / changes.length);
-      this.addButtons(lines, changes.map((item, i) => ({ label: (i === this.selected ? "▸ " : "  ") + truncateToWidth(`${i + 1} ${plain(item.label)}`, Math.max(4, tabWidth - 2)), action: () => this.select(i) })), inner);
+      this.addButtons(lines, changes.map((item, i) => ({ label: (i === this.selected ? "▸ " : "  ") + truncateToWidth(`${i + 1} ${plain(item.command !== undefined ? item.kind : item.label)}`, Math.max(4, tabWidth - 2)), action: () => this.select(i) })), inner);
     }
     if (file) lines.push(...wrapTextWithAnsi(theme.bold(`${this.selected + 1}/${changes.length} · ${plain(change.label)}`) + theme.fg("muted", `  ${plain(change.kind)} · +${change.added} −${change.removed}${change.status ? ` · ${plain(change.status)}` : ""}`), inner));
-    else lines.push(theme.fg("muted", `${plain(change.kind)}${change.status ? ` · ${plain(change.status)}` : ""}`));
+    else lines.push(theme.fg("muted", `${changes.length > 1 ? `Action ${this.selected + 1}/${changes.length} · ` : ""}${plain(change.kind)}${change.status ? ` · ${plain(change.status)}` : ""}`));
     lines.push(theme.fg("borderMuted", "─".repeat(inner)));
 
     const footer: string[] = [];
@@ -188,8 +193,8 @@ export class ReviewComponent implements Component, Focusable {
       footer.push(theme.fg("muted", "↑/↓ Scroll · PgUp/PgDn Page"));
     } else {
       // Button hit regions are placed below after the viewport height is known.
-      footer.push(...wrapTextWithAnsi(theme.fg("accent", this.options.readOnly ? "[q] Close" : `[a] Approve step · ${file ? `${changes.length} ${changes.length === 1 ? "file" : "files"}` : "command"}   [d] Deny   [n] Deny with note`), inner));
-      footer.push(...wrapTextWithAnsi(theme.fg("muted", file ? `${changes.length > 1 ? "Tab Files · " : ""}[ / ] Changes · / Search${this.options.onOpenExternal ? " · v VS Code" : ""} · ? Help` : `↑/↓ Scroll · PgUp/PgDn Page · i Why · Esc ${this.options.readOnly ? "Close" : "Deny"}`), inner));
+      footer.push(...wrapTextWithAnsi(theme.fg("accent", this.options.readOnly ? "[q] Close" : `[a] Approve step · ${changes.length > 1 ? `all ${changes.length} actions` : file ? "1 file" : "command"}   [d] Deny   [n] Deny with note`), inner));
+      footer.push(...wrapTextWithAnsi(theme.fg("muted", file ? `${changes.length > 1 ? "Tab Actions · " : ""}[ / ] Changes · / Search${this.options.onOpenExternal ? " · v VS Code" : ""} · ? Help` : `${changes.length > 1 ? "Tab Actions · " : ""}↑/↓ Scroll · i Why${this.options.onOpenExternal && !resultOnly ? " · v VS Code" : ""} · Esc ${this.options.readOnly ? "Close" : "Deny"}`), inner));
     }
     const room = available - lines.length - footer.length - input.length - 2;
     if (room < 2) {
@@ -201,7 +206,7 @@ export class ReviewComponent implements Component, Focusable {
     const rendered = renderChange(change, theme, contentWidth, { layout: this.layout, wrap: this.wrap, query: this.query });
     this.rendered = rendered;
     let body = rendered.lines;
-    if (this.mode === "why") body = [theme.fg("accent", "Why this change"), "", ...whyLines];
+    if (this.mode === "why") body = [theme.fg("accent", "Why this action"), "", ...whyLines];
     if (this.mode === "help") body = this.help().flatMap((line) => wrapTextWithAnsi(line, contentWidth));
     const scroll = this.activeScroll();
     this.height = Math.max(2, Math.min(body.length || 1, room));
@@ -225,7 +230,7 @@ export class ReviewComponent implements Component, Focusable {
       lines.push(renderedRow);
     }
     const hunkIndex = Math.max(0, rendered.hunks.filter((row) => row <= offset).length - 1);
-    const position = `${file ? `File ${this.selected + 1}/${changes.length}` : resultOnly ? "Result" : "Command"}${file && rendered.hunks.length ? ` · Change ${hunkIndex + 1}/${rendered.hunks.length}` : ""} · Lines ${body.length ? offset + 1 : 0}–${Math.min(body.length, offset + this.height)} of ${body.length}${this.query ? ` · ${rendered.matches.length} matches · f/F Next/previous` : ""}`;
+    const position = `${changes.length > 1 ? `Action ${this.selected + 1}/${changes.length}` : file ? "File 1/1" : resultOnly ? "Result" : "Command"}${file && rendered.hunks.length ? ` · Change ${hunkIndex + 1}/${rendered.hunks.length}` : ""} · Lines ${body.length ? offset + 1 : 0}–${Math.min(body.length, offset + this.height)} of ${body.length}${this.query ? ` · ${rendered.matches.length} matches · f/F Next/previous` : ""}`;
     footer[0] = theme.fg("dim", truncateToWidth(position, inner));
     if (input.length) {
       if (this.mode === "note") { this.editorY = lines.length + 2; this.editorHeight = input.length - 1; }
@@ -253,7 +258,7 @@ export class ReviewComponent implements Component, Focusable {
   }
 
   private help(): string[] {
-    return ["Review controls", "", "Tab / Shift+Tab   Next / previous file", "1–4               Select a file", "[ / ]             Previous / next changed section", "↑ / ↓             Scroll one line", "PgUp / PgDn       Scroll one page", "Home / End        Beginning / end", "/                 Search this file", "f / F             Next / previous search match", "w                 Toggle line wrapping", "s                 Toggle unified / side-by-side diff", "t                 Toggle file sidebar on wide terminals", "i                 Full explanation", ...(this.options.onOpenExternal ? ["v                 Open selected diff in VS Code"] : []), "", this.options.readOnly ? "q / Esc           Close review" : "a Approve · d / Esc Deny · n Deny with note", "", "Mouse: click file tabs or action labels; wheel scrolls code."];
+    return ["Review controls", "", "Tab / Shift+Tab   Next / previous action", "1–8               Select an action", "[ / ]             Previous / next changed section", "↑ / ↓             Scroll one line", "PgUp / PgDn       Scroll one page", "Home / End        Beginning / end", "/                 Search this file", "f / F             Next / previous search match", "w                 Toggle line wrapping", "s                 Toggle unified / side-by-side diff", "t                 Toggle action sidebar on wide terminals", "i                 Full explanation", ...(this.options.onOpenExternal ? ["v                 Open selected action in VS Code"] : []), "", this.options.readOnly ? "q / Esc           Close review" : "a Approve · d / Esc Deny · n Deny with note", "", "Mouse: click action tabs or action labels; wheel scrolls code."];
   }
   handleInput(data: string): void {
     if (this.closed) return;
@@ -277,7 +282,7 @@ export class ReviewComponent implements Component, Focusable {
       if (!this.options.readOnly && data === "n" && this.canApprove) { this.mode = "note"; this.notice = ""; }
       else if (matchesKey(data, "tab") || matchesKey(data, "right")) this.select(this.selected + 1);
       else if (matchesKey(data, "shift+tab") || matchesKey(data, "left")) this.select(this.selected - 1);
-      else if (/^[1-4]$/.test(data) && Number(data) <= this.options.changes.length) this.select(Number(data) - 1);
+      else if (/^[1-8]$/.test(data) && Number(data) <= this.options.changes.length) this.select(Number(data) - 1);
       else if (data === "[") this.jump(this.rendered.hunks, -1);
       else if (data === "]") this.jump(this.rendered.hunks, 1);
       else if (data === "f") this.jump(this.rendered.matches, 1);

@@ -63,7 +63,7 @@ function validArchive(value: unknown): value is ArchivedReview {
   return record(value) && id(value.id) && Number.isSafeInteger(value.revision) && value.revision >= 1 && typeof value.fingerprint === "string" && /^[a-f0-9]{64}$/.test(value.fingerprint)
     && text(value.title, 140) && text(value.why, 1800) && typeof value.status === "string" && value.status.length <= 300 && typeof value.createdAt === "string"
     && Number.isFinite(Date.parse(value.createdAt)) && (!value.revises || record(value.revises) && id(value.revises.reviewId))
-    && Array.isArray(value.changes) && value.changes.length > 0 && value.changes.length <= 4 && value.changes.every((change: unknown) => record(change)
+    && Array.isArray(value.changes) && value.changes.length > 0 && value.changes.length <= 8 && value.changes.every((change: unknown) => record(change)
       && text(change.label, 4096) && text(change.kind, 100) && ["before", "after", "command"].every(key => change[key] === undefined || typeof change[key] === "string" && Buffer.byteLength(change[key]) <= 256 * 1024));
 }
 

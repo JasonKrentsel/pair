@@ -11,7 +11,7 @@ function createFeedbackController(vscode, context, options) {
   let persistence = Promise.resolve();
   const commentController = vscode.comments?.createCommentController('pair', 'Pair section review');
   if (commentController) {
-    commentController.options = { prompt: 'Ask about this code or request a change. Save locally, then send the batch from Review Desk.', placeHolder: 'Feedback on these lines…' };
+    commentController.options = { prompt: 'Save a question draft, then use Send question here. Change requests can be collected and sent from Review Desk.', placeHolder: 'Ask why this code works, or describe the correction…' };
     commentController.commentingRangeProvider = { provideCommentingRanges(document) {
       const info = documentInfo.get(document.uri.toString()), current = options.getState();
       if (!info || info.scopeId !== current.feedback?.scopeId || !sameReview(current.review, identity(info.review)) || !current.review.pending || info.side === 'comparison') return [];
@@ -33,7 +33,7 @@ function createFeedbackController(vscode, context, options) {
     return current;
   }
   const drafts = () => scope()?.drafts || [];
-  const renderedDrafts = () => drafts().map(draft => ({ ...draft, outdated: !isCurrentDraft(draft, options.getState().review) }));
+  const renderedDrafts = () => drafts().map(draft => ({ ...draft, outdated: !sameReview(options.getState().review, draft) }));
   const threads = () => options.getState().feedback?.threads || [];
   const findItem = id => drafts().find(value => value.id === id) || threads().find(value => value.id === id);
   const persist = () => {
@@ -71,7 +71,7 @@ function createFeedbackController(vscode, context, options) {
     const range = input?.range || input?.thread?.range || editor?.selection;
     const target = assertionForDocument(uri, range);
     let text = input?.text;
-    if (text === undefined) text = await vscode.window.showInputBox({ title: intent === 'ask' ? 'Ask about these lines' : 'Request a change to these lines', prompt: 'Save a local draft. Send all your comments together from Review Desk.', ignoreFocusOut: true,
+    if (text === undefined) text = await vscode.window.showInputBox({ title: intent === 'ask' ? 'Ask about these lines' : 'Request a change to these lines', prompt: intent === 'ask' ? 'Save a draft first. Use Send question on its inline thread to ask Pi without requesting a revision.' : 'Save a draft correction. Review Desk lets you send related requests together.', ignoreFocusOut: true,
       validateInput: value => !validText(value) ? 'Use 1–1,500 characters without terminal controls.' : undefined });
     if (text === undefined) return;
     const checked = assertionForDocument(uri, range);
@@ -107,11 +107,12 @@ function createFeedbackController(vscode, context, options) {
     local.drafts = local.drafts.filter(value => value.id !== id); await persist(); changed();
   }
 
-  async function sendFeedback() {
+  async function sendFeedback(onlyId) {
     const state = ensureMutable();
     const local = scope(true), key = local.key, session = options.getSession();
     if (options.alteredSnapshots().length) throw new Error('A review snapshot was modified. Reopen its diff before submitting feedback.');
-    const current = local.drafts.filter(draft => isCurrentDraft(draft, state.review));
+    const current = local.drafts.filter(draft => isCurrentDraft(draft, state.review) && (!onlyId || draft.id === onlyId));
+    if (onlyId && local.submission && (local.submission.comments.length !== 1 || local.submission.comments[0].id !== onlyId)) throw new Error('Retry the pending feedback batch before sending a different question.');
     const payload = local.submission || submissionFor(state.review, current);
     local.submission = payload;
     // Persist the exact request before sending: an ambiguous response can be
@@ -132,6 +133,12 @@ function createFeedbackController(vscode, context, options) {
       if (scopeKey() === key && options.getState().feedback?.threads.some(thread => thread.batchId === payload.batchId)) { lastError = ''; return; }
       throw error;
     } finally { busy = false; changed(); }
+  }
+  async function sendQuestion(input) {
+    const id = itemId(input) || input?.thread?.pairId;
+    const draft = drafts().find(value => value.id === id);
+    if (!draft || draft.intent !== 'ask') throw new Error('Choose a question draft to send.');
+    return sendFeedback(id);
   }
   async function addressFeedback(input) {
     const state = ensureMutable();
@@ -179,29 +186,31 @@ function createFeedbackController(vscode, context, options) {
       for (const item of items) {
         const key = uri + ':' + item.id;
         desired.set(key, { uri: info.uri, range: new vscode.Range(item.startLine - 1, 0, item.endLine - 1, 0), label: scopedLabel(item),
-          comments: [nativeComment(item.text, 'You', `${item.intent === 'ask' ? 'Question' : 'Requested change'} · ${humanStatus(item.status)}`, item.status === 'draft' ? item.id : undefined), ...(item.reply ? [nativeComment(item.reply, 'Pi', undefined)] : [])],
-          pairId: item.id, contextValue: item.status === 'draft' ? 'pairDraft' : 'pairSubmitted', state: item.status === 'addressed' ? vscode.CommentThreadState?.Resolved : vscode.CommentThreadState?.Unresolved });
+          comments: [nativeComment(item.text, 'You', `${item.intent === 'ask' ? 'Question' : 'Requested change'} · ${humanStatus(item.status)}`, item.status === 'draft' ? item.id : undefined), ...(item.reply ? [nativeComment(item.reply, 'Pi', item.intent === 'ask' ? 'Answer · no changes made' : 'Reply')] : [])],
+          pairId: item.id, reply: item.reply, expand: item.intent === 'ask', contextValue: item.status === 'draft' ? (item.intent === 'ask' && (isCurrentDraft(item, state.review) || scope()?.submission?.comments.length === 1 && scope().submission.comments[0].id === item.id) ? 'pairDraftQuestion' : 'pairDraft') : 'pairSubmitted', state: item.status === 'addressed' ? vscode.CommentThreadState?.Resolved : vscode.CommentThreadState?.Unresolved });
       }
-      if (info.side === 'proposed' && sameReview(state.review, identity(info.review))) {
+      const proposedSource = textFor(change, info.side);
+      if (['proposed', 'command'].includes(info.side) && typeof proposedSource === 'string' && sameReview(state.review, identity(info.review))) {
         const explanation = change.why || info.review.why;
-        const notes = [...(explanation ? [{ title: change.why ? 'Why this file changes' : 'Step overview · applies to the whole proposal', why: explanation, startLine: 1, endLine: 1 }] : []), ...(change.annotations || [])];
+        const notes = [...(explanation ? [{ title: change.why ? (info.side === 'command' ? 'Why this command runs' : 'Why this file changes') : 'Step overview · applies to the whole proposal', why: explanation, startLine: 1, endLine: 1 }] : []), ...(change.annotations || [])];
         for (const [index, note] of notes.entries()) {
-          if (!Number.isInteger(note.startLine) || !Number.isInteger(note.endLine) || note.startLine < 1 || note.endLine > sourceLines(change.after).length || note.endLine < note.startLine) continue;
+          if (!Number.isInteger(note.startLine) || !Number.isInteger(note.endLine) || note.startLine < 1 || note.endLine > sourceLines(proposedSource).length || note.endLine < note.startLine) continue;
           desired.set(uri + ':explanation:' + index, { uri: info.uri, range: new vscode.Range(note.startLine - 1, 0, note.endLine - 1, 0), label: note.title || 'Why these lines?', comments: [nativeComment(note.why, 'Pi', 'Explanation')], contextValue: 'pairExplanation', expand: index === 0 });
         }
       }
     }
     for (const [key, entry] of nativeThreads) if (!desired.has(key)) { entry.thread.dispose(); nativeThreads.delete(key); }
     for (const [key, value] of desired) {
-      const signature = JSON.stringify([value.label, value.comments.map(comment => [comment.body?.value ?? comment.body, comment.label]), value.state]);
+      const signature = JSON.stringify([value.label, value.comments.map(comment => [comment.body?.value ?? comment.body, comment.label]), value.state, value.contextValue]);
       const existing = nativeThreads.get(key);
       if (existing?.signature === signature) continue;
       const thread = existing?.thread || commentController.createCommentThread(value.uri, value.range, value.comments);
       thread.label = value.label; thread.contextValue = value.contextValue; thread.pairId = value.pairId; thread.canReply = false;
       if (existing) thread.comments = value.comments;
       if (value.state !== undefined) thread.state = value.state;
-      if (!existing) thread.collapsibleState = value.contextValue === 'pairDraft' || value.expand ? vscode.CommentThreadCollapsibleState.Expanded : vscode.CommentThreadCollapsibleState.Collapsed;
-      nativeThreads.set(key, { signature, thread });
+      if (!existing) thread.collapsibleState = value.contextValue.startsWith('pairDraft') || value.expand ? vscode.CommentThreadCollapsibleState.Expanded : vscode.CommentThreadCollapsibleState.Collapsed;
+      else if (value.reply && existing.reply !== value.reply) thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+      nativeThreads.set(key, { signature, thread, reply: value.reply });
     }
   }
 
@@ -209,7 +218,7 @@ function createFeedbackController(vscode, context, options) {
   function syncDesk(force = false, top = false) {
     if (!desk) return;
     const value = deskOptions();
-    const signature = JSON.stringify([value.root, value.feedback?.scopeId, value.feedback?.revision, value.review?.id, value.review?.pending, value.drafts, value.selectedId, value.connected, value.trusted, value.busy, value.submission, value.errorMessage]);
+    const signature = JSON.stringify([value.root, value.feedback?.scopeId, value.feedback?.revision, value.review?.id, value.review?.pending, value.review?.status, value.drafts, value.selectedId, value.connected, value.trusted, value.busy, value.submission, value.errorMessage]);
     if (!force && signature === deskSignature) return;
     deskSignature = signature; desk.webview.html = renderDesk({ ...value, scrollTarget: top ? 'top' : undefined });
   }
@@ -242,9 +251,10 @@ function createFeedbackController(vscode, context, options) {
           if (!sameReview(state.review, message.reviewIdentity)) throw new Error('The proposal changed. Open its current file list.');
           await options.openCurrent(message.action === 'open-file' ? Number(message.index) : undefined);
         }
-        else if (message.action === 'send') {
+        else if (message.action === 'send' || message.action === 'send-question') {
           if (message.revision !== state.feedback?.revision) throw new Error('The review changed. Check the current feedback before sending.');
-          await sendFeedback();
+          if (message.action === 'send-question') await sendQuestion(message.id);
+          else await sendFeedback();
         }
         else if (message.action === 'remove') await removeDraft(message.id);
         else if (message.action === 'edit') await editDraft(message.id);
@@ -269,8 +279,8 @@ function createFeedbackController(vscode, context, options) {
   function forgetDocument(uri) { documentInfo.delete(uri); syncComments(); }
   context.subscriptions.push({ dispose() { disposed = true; for (const entry of nativeThreads.values()) entry.thread.dispose(); nativeThreads.clear(); documentInfo.clear(); desk?.dispose(); } });
   return {
-    sync, mapDocument, forgetDocument, addFeedback, editDraft, removeDraft, sendFeedback, addressFeedback, openFeedback, openDesk,
-    sidebar: part => { const state = options.getState(); return sidebarFeedback({ drafts: renderedDrafts(), threads: threads(), supported: !!state.feedback, connected: state.connected && vscode.workspace.isTrusted, pending: !!state.review?.pending, busy, submission: scope()?.submission, part }); },
+    sync, mapDocument, forgetDocument, addFeedback, editDraft, removeDraft, sendFeedback, sendQuestion, addressFeedback, openFeedback, openDesk,
+    sidebar: part => { const state = options.getState(); return sidebarFeedback({ drafts: renderedDrafts(), threads: threads(), supported: !!state.feedback, connected: state.connected && vscode.workspace.isTrusted, pending: !!state.review?.pending, review: state.review, busy, submission: scope()?.submission, part }); },
     blocksApproval: () => busy || !!scope()?.submission || drafts().some(draft => isCurrentDraft(draft, options.getState().review)),
     signature: () => JSON.stringify([scopeKey(), renderedDrafts(), threads(), busy, scope()?.submission]),
     getState: () => ({ scopeId: options.getState().feedback?.scopeId, drafts: structuredClone(renderedDrafts()), submission: scope()?.submission ? structuredClone(scope().submission) : undefined,
