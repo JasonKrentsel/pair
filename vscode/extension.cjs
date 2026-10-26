@@ -7,7 +7,8 @@ const { canonicalRoot, containedFile, discoverSessions, request, validReview, va
 const { renderCheckpointPanel, scopeLabel } = require('./checkpoint-panel.cjs');
 const { validFeedback } = require('./feedback-model.cjs');
 const { markdown } = require('./feedback-ui.cjs');
-const { commandMarkup, commandCss, validProgress, outputMarkup, outputScript } = require('./command-view.cjs');
+const { validProgress } = require('./command-view.cjs');
+const { createCommandCenter } = require('./command-center.cjs');
 const { createFeedbackController } = require('./feedback-controller.cjs');
 
 const SCHEME = 'pair-review';
@@ -22,7 +23,7 @@ function activate(context) {
   let memory;
   let feedback;
   let progress = [];
-  let displayedProgress;
+  let commandCenter;
   let feedbackController;
   let connected = false;
   let busy = false;
@@ -67,18 +68,12 @@ function activate(context) {
   function update() {
     if (disposed) return;
     feedbackController?.sync();
+    commandCenter?.sync();
     updateCheckpoint();
     const signature = JSON.stringify([selected?.sessionId, connected, busy, memoryBusy, errorMessage, review?.id, review?.revision, review?.fingerprint, review?.gate, review?.status, review?.pending, sessions.length, vscode.workspace.isTrusted, dirtyFiles(), alteredSnapshots().length, feedbackController?.signature()]);
-    if (signature === displayedState) {
-      const outputSignature = JSON.stringify(progress);
-      if (reviewView && connected && displayedProgress !== outputSignature) {
-        displayedProgress = outputSignature;
-        void reviewView.webview.postMessage({ type: 'command-output', reviewId: review?.id, progress });
-      }
-      return;
-    }
+    if (signature === displayedState) return;
     displayedState = signature;
-    displayedProgress = JSON.stringify(progress);
+
     void vscode.commands.executeCommand('setContext', 'pair.canDecide', !!canDecide()).then(undefined, () => {});
     void vscode.commands.executeCommand('setContext', 'pair.canApprove', !!canApprove()).then(undefined, () => {});
     changesChanged.fire();
@@ -119,15 +114,14 @@ function activate(context) {
     const running = /^Applying /.test(review?.status || '');
     const actions = review?.changes.map((change, index) => {
       const command = change.command !== undefined;
-      const label = command ? 'Open ' + change.kind + ' command' : change.label;
-      return `<li class="step-action"><div class="action-heading"><span class="action-number">${index + 1}</span><div><div class="muted">${escape(change.kind)}${command ? '' : ' · +' + (change.added || 0) + ' −' + (change.removed || 0)}${change.status ? ' · ' + escape(change.status) : ''}</div><button class="action-link" data-action="open-action" data-index="${index}">${escape(label)}</button></div></div>${change.why ? '<div class="action-why">' + markdown(change.why) + '</div>' : ''}${command ? '<div class="command"><div class="muted">' + escape(change.cwd || selected?.root) + '</div>' + commandMarkup(change.command) + outputMarkup(index, connected ? progress.find(p => p.reviewId === review.id && p.index === index) : undefined) + '</div>' : ''}</li>`;
+      const label = command ? 'Open command & output' : change.label;
+      return `<li class="step-action"><div class="action-heading"><span class="action-number">${index + 1}</span><div><div class="muted">${escape(change.kind)}${command ? '' : ' · +' + (change.added || 0) + ' −' + (change.removed || 0)}${change.status ? ' · ' + escape(change.status) : ''}</div><button class="action-link" data-action="open-action" data-index="${index}">${escape(label)}</button></div></div>${change.why ? '<div class="action-why">' + markdown(change.why) + '</div>' : ''}</li>`;
     }).join('') || '';
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"><meta name="viewport" content="width=device-width,initial-scale=1"><style nonce="${nonce}">
       h3{font-size:1em;font-weight:600;margin:14px 0 6px}.feedback-summary{margin:20px 0 14px;padding-top:8px;border-top:1px solid var(--vscode-panel-border)}.draft{padding:8px 0;border-bottom:1px solid var(--vscode-panel-border)}.draft p{margin:4px 0;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.why p{margin:6px 0}.why ul{padding-left:20px}.why code{font-family:var(--vscode-editor-font-family);background:var(--vscode-textCodeBlock-background)}
       body{padding:12px 16px;margin:0;color:var(--vscode-foreground);font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);line-height:1.5}h2{font-size:1.08em;margin:6px 0 10px;font-weight:600}.status{color:var(--vscode-descriptionForeground);font-size:.92em}.why{white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 14px}.muted{color:var(--vscode-descriptionForeground);font-size:.92em}.warning{color:var(--vscode-editorWarning-foreground);margin:12px 0}.actions{display:flex;flex-wrap:wrap;gap:8px;padding:4px 0 10px;position:sticky;top:0;background:var(--vscode-sideBar-background)}button{border:1px solid transparent;border-radius:2px;padding:6px 10px;font:inherit;cursor:pointer;background:var(--vscode-button-background);color:var(--vscode-button-foreground)}button:hover{background:var(--vscode-button-hoverBackground)}button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:2px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--vscode-editor-font-family);font-size:var(--vscode-editor-font-size);background:var(--vscode-textCodeBlock-background);padding:8px}.command{margin:12px 0}.scope{margin-top:10px}.empty{margin-top:12px}
       .review-controls{position:sticky;top:0;z-index:1;background:var(--vscode-sideBar-background);padding-top:4px}.review-controls .actions{position:static}.review-controls .feedback-summary{margin:2px 0 10px;padding-top:0;border:0}.review-controls h3{margin:4px 0}.review-controls p{margin:0 0 8px}.scope{margin-bottom:12px}
       .step-actions{list-style:none;padding:0;margin:8px 0 20px}.step-action{padding:12px 0;border-top:1px solid var(--vscode-panel-border)}.action-heading{display:flex;gap:9px;align-items:flex-start}.action-heading>div{min-width:0}.action-number{min-width:22px;height:22px;text-align:center;border:1px solid var(--vscode-panel-border);border-radius:50%;color:var(--vscode-descriptionForeground)}.action-link{display:block;background:transparent;color:var(--vscode-textLink-foreground);padding:0;text-align:left;overflow-wrap:anywhere;border:0}.action-link:hover{background:transparent;text-decoration:underline}.action-why p{margin:6px 0;overflow-wrap:anywhere}.step-action details{margin-top:8px}.step-action summary{cursor:pointer;color:var(--vscode-descriptionForeground)}
-      ${commandCss}
       </style></head><body>
       <div class="status">Pair ${escape(VERSION)} · ${escape(selected ? `${path.basename(selected.root)} · ${selected.sessionId.slice(0, 8)}` : 'Pair for Pi')} ${connected ? '' : '· disconnected'}</div>
       ${review ? `<h2>${escape(review.title)}</h2><div class="status">${escape(review.status)} · ${count} ${count === 1 ? 'action' : 'actions'}</div>
@@ -135,9 +129,9 @@ function activate(context) {
         <div class="why">${markdown(review.why)}</div><h3>Actions in order</h3><ol class="step-actions" aria-label="Step actions in execution order">${actions}</ol><div class="muted scope">Approval runs every action in this order. A failure stops the remaining actions.</div>`
         : `<p class="empty">${sessions.length > 1 ? 'Choose the Pi session you want to review.' : connected ? 'Connected. The next Pair proposal will appear here.' : 'Open the same folder in Pi and VS Code.'}</p>`}
       ${blocker ? `<p class="warning" role="status">${escape(blocker)}</p>` : ''}
-      ${feedbackController?.sidebar(review ? 'drafts' : 'all') || ''}
+      ${running ? '' : feedbackController?.sidebar(review ? 'drafts' : 'all') || ''}
       <button class="secondary" data-action="session">Select session</button>
-      <script nonce="${nonce}">const api=acquireVsCodeApi();const identity=${currentIdentity};${outputScript}${running ? `requestAnimationFrame(()=>document.querySelector('[data-output]:not([hidden])')?.closest('li')?.scrollIntoView({block:'start'}));` : ''}document.querySelectorAll('button[data-action]').forEach(button=>button.addEventListener('click',()=>api.postMessage({action:button.dataset.action,identity,index:Number(button.dataset.index)})));</script>
+      <script nonce="${nonce}">const api=acquireVsCodeApi();const identity=${currentIdentity};document.querySelectorAll('button[data-action]').forEach(button=>button.addEventListener('click',()=>api.postMessage({action:button.dataset.action,identity,index:Number(button.dataset.index)})));</script>
       </body></html>`;
   }
 
@@ -334,6 +328,10 @@ function activate(context) {
 
   async function openSnapshot(snapshot, index, anchor = {}) {
     if (!selected || !matchesWorkspace(selected) || !snapshot?.changes[index]) return;
+    if (typeof snapshot.changes[index].command === 'string' && !anchor.startLine && !anchor.native && !anchor.compare) {
+      commandCenter.open(snapshot, index);
+      return;
+    }
     const currentSession = { ...selected };
     const currentReview = snapshot;
     const change = currentReview.changes[index];
@@ -478,6 +476,7 @@ function activate(context) {
   const register = (name, callback) => context.subscriptions.push(vscode.commands.registerCommand(name, async (...args) => {
     try { return await callback(...args); } catch (error) { showError(error); throw error; }
   }));
+  commandCenter = createCommandCenter(vscode, context, { getState: liveState, openNative: (snapshot,index) => openSnapshot(snapshot,index,{native:true}), showError });
   feedbackController = createFeedbackController(vscode, context, { getState: liveState, getSession: () => selected && { ...selected }, matchesWorkspace: () => matchesWorkspace(selected), request,
     refresh: () => refresh(true), onChanged: update, alteredSnapshots, openSnapshot, openCurrent: openChange, chooseSession, showError });
   register('pair.reviewDesk', () => feedbackController.openDesk());
@@ -499,6 +498,7 @@ function activate(context) {
   register('pair.addConstraint', addConstraint);
   register('pair.removeConstraint', removeConstraint);
   register('pair.openChange', openChange);
+  register('pair.openCommandSource', () => commandCenter.openSource());
   register('pair.nextFile', () => openChange(review ? (selectedIndex + 1) % review.changes.length : 0));
   register('pair.previousFile', () => openChange(review ? (selectedIndex + review.changes.length - 1) % review.changes.length : 0));
   register('pair.selectSession', chooseSession);
@@ -536,7 +536,7 @@ function activate(context) {
   const interval = setInterval(() => { void refresh().catch(error => { connected = false; errorMessage = error.message; update(); }); }, 1500);
   context.subscriptions.push({ dispose() { disposed = true; clearInterval(interval); documents.clear(); } });
   void refresh(true).catch(showError);
-  return { getState: state, getReviewState: () => feedbackController.getState(), refresh: () => refresh(true) };
+  return { getCommandViewState: () => commandCenter.getState(), getState: state, getReviewState: () => feedbackController.getState(), refresh: () => refresh(true) };
 }
 
 module.exports = { activate };

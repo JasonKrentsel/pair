@@ -150,3 +150,5 @@ Highlighting, navigation, search and editor handoff are local operations. A stab
 
 
 Command review (0.7): exact commands use numbered lines and indented visual wrapping. VS Code shows a separate live output tail with a Follow output toggle; Pi shows the latest eight display rows. Output updates are display-only: no extra model calls, feedback events, or approved-snapshot changes. The live pane keeps at most 400 lines / 32 KiB per action and follows native tool buffering; final native tool output remains in the conversation.
+
+VS Code 0.7.1 puts the command and live output in a central editor tab, with output filling the remaining editor height. The right sidebar retains step approvals and action navigation. Open source / inline feedback returns to the exact native shell snapshot.

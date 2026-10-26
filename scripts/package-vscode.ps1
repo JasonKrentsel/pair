@@ -37,7 +37,7 @@ try {
     $writer = [IO.StreamWriter]::new($entry.Open(), [Text.UTF8Encoding]::new($false))
     try { $writer.Write($item[1]) } finally { $writer.Dispose() }
   }
-  foreach ($file in @('package.json', 'extension.cjs', 'client.cjs', 'command-view.cjs', 'checkpoint-panel.cjs', 'feedback-model.cjs', 'feedback-ui.cjs', 'feedback-controller.cjs', 'README.md', 'media/pair.svg')) {
+  foreach ($file in @('package.json', 'extension.cjs', 'client.cjs', 'command-view.cjs', 'command-center.cjs', 'checkpoint-panel.cjs', 'feedback-model.cjs', 'feedback-ui.cjs', 'feedback-controller.cjs', 'README.md', 'media/pair.svg')) {
     [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, (Join-Path $extensionRoot $file), "extension/$file") | Out-Null
   }
 } finally { $archive.Dispose(); $stream.Dispose() }
