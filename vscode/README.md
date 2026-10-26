@@ -4,6 +4,22 @@ Pair 0.12.0 keeps the current step and focused Chat in one React sidebar. Follow
 
 Chat accepts ordinary Markdown. Expand Reasoning to see model-supplied text, or a read tool to inspect its input and result. Only `read`, `grep`, `find` and `ls` are available inside the project; shell commands and writing tools cannot run. Grep uses literal text, and searches have explicit path/result/size limits. Failed replies show an inline Retry button. Usage totals the reply's model rounds; zero cache tokens do not prove a cache miss. Follow-ups reuse the child's fixed context and tools, while parent-cache sharing is not guaranteed.
 
+## Install
+
+Install the Pi package from your terminal:
+
+```sh
+pi install git:github.com/JasonKrentsel/pair@v0.12.0
+```
+
+Download [pi-pair-0.12.0.vsix](https://github.com/JasonKrentsel/pair/releases/download/v0.12.0/pi-pair-0.12.0.vsix), then use **Extensions: Install from VSIX...** in VS Code's Command Palette, or run:
+
+```sh
+code --install-extension ./pi-pair-0.12.0.vsix --force
+```
+
+Restart or `/reload` Pi when idle, and run **Developer: Reload Window** in VS Code. Start Pi in your project, run `/pair on`, then `/pair code` to open the matching folder and sidebar. Requirements and source installation are covered in the [full installation guide](https://github.com/JasonKrentsel/pair#install).
+
 ## Use
 
 1. Install this companion and reload Pair 0.12.0 in Pi when idle.

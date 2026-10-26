@@ -2,6 +2,77 @@
 
 Pair adds an explanation and a permission decision to the next coherent step. Related edits across a few files share one review: inspect the file list and individual diffs, then choose **Approve step**, **Deny**, or **Deny with note**.
 
+## Install
+
+Pair has two parts: a Pi package that owns execution and an optional VS Code companion for reviewing and discussing steps. Install both for the full interface. The Pi package also works on its own in the terminal.
+
+You need [Pi](https://pi.dev/) **1.4.0 or newer**, **Node.js 22.19 or newer**, and **Git**. The companion requires local desktop **VS Code 1.96 or newer**. Run Pi and VS Code on the same machine and open the same project folder; remote SSH, WSL, containers, and browser-hosted VS Code are currently unsupported.
+
+### 1. Install the Pi package
+
+Run this in your terminal:
+
+```sh
+pi install git:github.com/JasonKrentsel/pair@v0.12.0
+```
+
+Pi installs the extension, its runtime dependencies, and the bundled skills. This pins Pair to the matching release. If Pi is already open, wait until it is idle and run `/reload`, or restart it.
+
+Start Pi in the project you want to work on:
+
+```sh
+cd path/to/your/project
+pi
+```
+
+Inside Pi, enable Pair:
+
+```text
+/pair on
+```
+
+### 2. Install the VS Code companion
+
+Download [pi-pair-0.12.0.vsix](https://github.com/JasonKrentsel/pair/releases/download/v0.12.0/pi-pair-0.12.0.vsix) from the [release page](https://github.com/JasonKrentsel/pair/releases/tag/v0.12.0). No source build is needed.
+
+In VS Code, open the Command Palette, choose **Extensions: Install from VSIX...**, and select the downloaded file. Alternatively, run this from the directory containing it:
+
+```sh
+code --install-extension ./pi-pair-0.12.0.vsix --force
+```
+
+Run **Developer: Reload Window** in VS Code after installation. The companion is distributed as a VSIX; installing the Pi package alone does not install it into VS Code.
+
+### 3. Connect Pi and VS Code
+
+With Pair enabled in Pi, run:
+
+```text
+/pair code
+```
+
+This opens Pi's current project in VS Code and focuses **Pair: Step**. It requires the `code` command on your PATH. You can also open that same folder in VS Code yourself and choose **Pair: Open Review** from the Command Palette. One matching Pi session connects automatically; use **Pair: Select Pi Session** if several sessions share the folder.
+
+Ask Pi to make a change. Pair shows the proposed actions, explanations and diffs before execution. Choose **Approve step**, **Deny**, or **Deny with note**. Use **Chat** beside an action to ask questions or request a scoped revision.
+
+To upgrade, install the new release's Git tag and matching VSIX, then reload Pi and VS Code.
+
+### Install from a local source checkout
+
+Use this route instead of the Git package install above when developing Pair. The VS Code packaging command currently uses Windows PowerShell.
+
+```powershell
+git clone https://github.com/JasonKrentsel/pair.git
+cd pair
+npm ci --legacy-peer-deps
+npm ci --prefix vscode
+pi install .
+npm run package:vscode
+code --install-extension ./artifacts/pi-pair-0.12.0.vsix --force
+```
+
+The local Pi install links this checkout, so keep the folder in place. Reload Pi and VS Code after installation. Runtime Pi packages are supplied by the Pi host; `--legacy-peer-deps` avoids installing duplicate copies into the checkout. Build output goes to `artifacts/` and stays outside Git.
+
 ## Current status
 
 Version 0.12.0 adds bounded project reads to follow-up Chat and a three-version native comparison: current disk file, original proposal, and revised proposal. Chat shows reasoning, read-tool results and answers in their actual order. No shell or writing tool is exposed to the child. Requested changes remain scoped candidates requiring adoption and step approval. Navigation and section highlighting remain local.
@@ -30,7 +101,7 @@ A denial note can request a revision, skip an action, or ask for discussion. A r
 
 ## VS Code review
 
-Install the local companion from `vscode/` with `npm run package:vscode`, then install the generated VSIX in VS Code. Use `/pair code` to open Pi's current working directory in VS Code and focus this session. A single matching session connects automatically; multiple sessions have an explicit selector. The next proposal opens its explanation, file list, and native diff. `pair.openReviewAutomatically` controls automatic opening.
+Follow the [installation steps](#install) for the Pi package and VS Code companion. Use `/pair code` to open Pi's current working directory in VS Code and focus this session. A single matching session connects automatically; multiple sessions have an explicit selector. The next proposal opens its explanation, file list, and native diff. `pair.openReviewAutomatically` controls automatic opening.
 
 The sidebar keeps **Approve step**, **Deny**, and **Deny with note** available while the diff scrolls. Approval covers the complete listed step. Commands display their exact text and working directory. Approving in either interface resolves the same request once; the result appears in both. Closing VS Code leaves the Pi request pending. A single replacement Pi listener reconnects automatically; use `/pair code` to reveal the review. saved results are read-only.
 
