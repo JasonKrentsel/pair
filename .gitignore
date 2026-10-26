@@ -2,3 +2,6 @@ node_modules/
 *.tsbuildinfo
 artifacts/
 *.vsix
+vscode/media/ui/
+vscode/webview/test-results/
+vscode/webview/playwright-report/

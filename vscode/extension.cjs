@@ -3,8 +3,7 @@ const VERSION = require('./package.json').version;
 const vscode = require('vscode');
 const path = require('node:path');
 const { canonicalRoot, containedFile, discoverSessions, request, validReview, identity, sameReview, decisionIdentity, sameDecision, associatedLanguage } = require('./client.cjs');
-const { renderReviewPanel } = require('./review-panel.cjs');
-const { renderActionConversation, actionConversationUpdate } = require('./action-conversation.cjs');
+const { renderWebview } = require('./webview.cjs');
 const { validProgress } = require('./command-view.cjs');
 const { createCommandCenter } = require('./command-center.cjs');
 
@@ -22,8 +21,6 @@ function activate(context) {
   let activeConversationId;
   let adoptedRevision;
   let conversationBusy = false;
-  let displayedConversation;
-  let displayedConversationUpdate;
   let commandCenter;
   let connected = false;
   let busy = false;
@@ -63,8 +60,6 @@ function activate(context) {
   context.subscriptions.push(status);
 
   const activeConversation = () => actionConversations.find(item => item.id === activeConversationId);
-  const conversationAssets = () => reviewView?.webview.asWebviewUri && context.extensionUri ? Object.fromEntries(['vendor/highlight.js','vendor/powershell.js'].map(name => [name,reviewView.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri,'media',name)).toString()])) : undefined;
-  const conversationOptions = () => ({ review,adoptedRevision:adoptedRevision?.sessionId === selected?.sessionId ? adoptedRevision : undefined,index:activeConversation()?.index ?? selectedIndex,conversation:activeConversation(),connected,trusted:vscode.workspace.isTrusted,busy:conversationBusy,errorMessage:connected?'':errorMessage,assets:conversationAssets() });
   const scopeDecoration = vscode.window.createTextEditorDecorationType?.({isWholeLine:true,backgroundColor:new vscode.ThemeColor('editor.rangeHighlightBackground'),borderWidth:'0 0 0 2px',borderStyle:'solid',borderColor:new vscode.ThemeColor('focusBorder')});
   if(scopeDecoration)context.subscriptions.push(scopeDecoration);
   let decoratedScope;
@@ -82,19 +77,23 @@ function activate(context) {
     }
   }
   const canDiscuss = () => connected && !busy && !conversationBusy && conversationAvailable && review?.pending && matchesWorkspace(selected) && vscode.workspace.isTrusted;
-  function updateConversation() {
-    const conversation = activeConversation();
-    if (!activeConversationId || !conversation || !reviewView) return false;
-    const key = selected?.sessionId + ':' + conversation.id;
-    const options = conversationOptions();
-    if (displayedConversation !== key) {
-      reviewView.webview.html = renderActionConversation(options);
-      displayedConversation = key;
-      displayedConversationUpdate = undefined;
-    }
-    const patch = actionConversationUpdate(options), signature = JSON.stringify(patch);
-    if (signature !== displayedConversationUpdate) { displayedConversationUpdate = signature; void reviewView.webview.postMessage?.(patch); }
-    return true;
+  // Only presentation data crosses the webview boundary. Bridge credentials,
+  // ports, command output streams and session discovery records stay in the host.
+  const webviewState = () => ({
+    version: VERSION, session: selected ? {sessionId:selected.sessionId,root:selected.root} : undefined,
+    sessionsCount: sessions.length, connected, busy, review, selectedIndex,
+    trusted: vscode.workspace.isTrusted, canDecide: !!canDecide(), canApprove: !!canApprove(),
+    dirtyFiles: dirtyFiles(), alteredSnapshots: alteredSnapshots().length, errorMessage,
+    conversationAvailable: !!canDiscuss(), actionConversations, activeConversationId, conversationBusy,
+    adoptedRevision: adoptedRevision?.sessionId === selected?.sessionId ? adoptedRevision : undefined,
+  });
+  function publishWebviewState(force=false) {
+    if (!reviewView || disposed) return;
+    const snapshot = webviewState(), signature = JSON.stringify(snapshot);
+    if (!force && signature === displayedState) return;
+    displayedState = signature;
+    // A ready handshake replays this snapshot if a post raced initial script load.
+    void reviewView.webview.postMessage?.({type:'pair-state',state:snapshot});
   }
 
   function update() {
@@ -102,23 +101,12 @@ function activate(context) {
     commandCenter?.sync();
     updateScopeDecoration();
     void vscode.commands.executeCommand('setContext', 'pair.canDiscuss', !!canDiscuss()).then(undefined, () => {});
-    const showingConversation = updateConversation();
-    const signature = JSON.stringify([selected?.sessionId, connected, busy, errorMessage, review?.id, review?.revision, review?.fingerprint, review?.gate, review?.status, review?.pending, sessions.length, vscode.workspace.isTrusted, dirtyFiles(), alteredSnapshots().length, selectedIndex, conversationAvailable, activeConversationId, conversationBusy, actionConversations.map(item => [item.id,item.status,!!item.candidate]), review?.changes.map(change => change.status)]);
-    if (signature === displayedState) return;
-    displayedState = signature;
-
     void vscode.commands.executeCommand('setContext', 'pair.canDecide', !!canDecide()).then(undefined, () => {});
     void vscode.commands.executeCommand('setContext', 'pair.canApprove', !!canApprove()).then(undefined, () => {});
     status.text = connected ? review?.pending ? '$(git-pull-request) Pair: review' : '$(check) Pair' : '$(debug-disconnect) Pair';
     status.tooltip = connected ? `Pair · ${selected.root}\n${review?.title || 'Waiting for a proposal'}` : errorMessage || 'Open Pair to connect to a Pi session in this project.';
     if (roots().length && (selected || sessions.length)) status.show(); else status.hide();
-    if (reviewView && !showingConversation) { displayedConversation = undefined; reviewView.webview.html = renderPanel(); }
-  }
-
-  function renderPanel() {
-    return renderReviewPanel({ conversationAvailable: !!canDiscuss(), actionConversations, version: VERSION, session: selected, sessions, connected, busy, review, selectedIndex,
-      trusted: vscode.workspace.isTrusted, canDecide: !!canDecide(), canApprove: !!canApprove(),
-      dirtyFiles: dirtyFiles(), alteredSnapshots: alteredSnapshots().length, errorMessage });
+    publishWebviewState();
   }
 
   context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(SCHEME, {
@@ -132,10 +120,10 @@ function activate(context) {
     resolveWebviewView(view) {
       reviewView = view;
       view.webview.options = { enableScripts: true, localResourceRoots: context.extensionUri ? [vscode.Uri.joinPath(context.extensionUri,'media')] : [] };
-      displayedConversation = undefined;
-      if (!updateConversation()) view.webview.html = renderPanel();
+      displayedState = undefined;
       view.webview.onDidReceiveMessage(message => {
         if (!message || typeof message !== 'object') return;
+        if (message.action === 'webview-ready') { publishWebviewState(true); return; }
         if (message.action?.startsWith('conversation-')) { void handleConversationMessage(message).catch(error => { void reviewView?.webview.postMessage?.({type:'action-conversation-error',id:message.conversationId,text:error.message}); }); return; }
         if (message.action === 'chat-action') { void openActionConversation({index:message.index,identity:message.identity,conversationId:message.conversationId}).catch(showError); return; }
         if (message.action === 'session') return void chooseSession().catch(showError);
@@ -146,7 +134,10 @@ function activate(context) {
         if (!['approve', 'deny', 'note'].includes(message.action)) return;
         void decide(message.action, message.identity).catch(showError);
       }, undefined, context.subscriptions);
-      view.onDidDispose(() => { if (reviewView === view) { reviewView = undefined; displayedConversation = undefined; } }, undefined, context.subscriptions);
+      const assets = Object.fromEntries(['app.js','app.css'].map(name => [name, context.extensionUri && view.webview.asWebviewUri
+        ? view.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri,'media','ui',name)).toString() : 'media/ui/'+name]));
+      view.webview.html = renderWebview({state:webviewState(),assets,cspSource:view.webview.cspSource});
+      view.onDidDispose(() => { if (reviewView === view) { reviewView = undefined; displayedState = undefined; } }, undefined, context.subscriptions);
     }
   }));
   function showError(error) { void vscode.window.showWarningMessage(error instanceof Error ? error.message : String(error)); }
@@ -331,7 +322,7 @@ function activate(context) {
 
   async function openReview() {
     activeConversationId = undefined;
-    displayedConversation = undefined;
+
     update();
     await vscode.commands.executeCommand('workbench.view.extension.pair');
     await vscode.commands.executeCommand('pair.review.focus');
@@ -373,7 +364,7 @@ function activate(context) {
       await refresh(true);
       const id = result.data?.conversationId;
       if (typeof id !== 'string' || !actionConversations.some(item=>item.id===id)) throw new Error('Pi did not open the action conversation. Refresh Pair and try again.');
-      selectedIndex = index; activeConversationId = id;displayedConversation = undefined;
+      selectedIndex = index; activeConversationId = id;
       await vscode.commands.executeCommand('workbench.view.extension.pair');
       await vscode.commands.executeCommand('pair.review.focus');
       update();
@@ -382,10 +373,10 @@ function activate(context) {
   }
 
   async function handleConversationMessage(message) {
-    if (message.action === 'conversation-back') {if(message.conversationId!==activeConversationId)return;activeConversationId=undefined;displayedConversation=undefined;update();return;}
+    if (message.action === 'conversation-back') {if(message.conversationId!==activeConversationId)return;activeConversationId=undefined;update();return;}
     const conversation = activeConversation();
     if (!conversation || message.conversationId !== conversation.id) throw new Error('This conversation is no longer selected. Open it from the current step.');
-    if (message.action === 'conversation-ready') {displayedConversationUpdate=undefined;updateConversation();return;}
+    if (message.action === 'conversation-ready') {publishWebviewState(true);return;}
     if (message.action === 'conversation-open-action') {await openChange(conversation.index);return;}
     if (message.action === 'conversation-preview') {await previewConversationCandidate(conversation);return;}
     const action = {'conversation-send':'send','conversation-stop':'stop','conversation-adopt':'adopt','conversation-discard':'discard'}[message.action];
@@ -414,7 +405,7 @@ function activate(context) {
         adoptedRevision = {sessionId:session.sessionId,conversationId:conversation.id,identity:decisionIdentity(result.data.review)};
       }
       await refresh(true);
-      if(action==='adopt') {activeConversationId=undefined;displayedConversation=undefined;selectedIndex=conversation.index;update();await openChange(conversation.index);}
+      if(action==='adopt') {activeConversationId=undefined;selectedIndex=conversation.index;update();await openChange(conversation.index);}
     } finally {conversationBusy=false;update();}
   }
 
@@ -521,7 +512,7 @@ function activate(context) {
   const interval = setInterval(() => { void refresh().catch(error => { connected = false; errorMessage = error.message; update(); }); }, 1500);
   context.subscriptions.push({ dispose() { disposed = true; clearInterval(interval); documents.clear(); documentTargets.clear(); } });
   void refresh(true).catch(showError);
-  return { getCommandViewState: () => commandCenter.getState(), getState: state, getConversationState: () => structuredClone({activeConversationId,conversation:activeConversation()}), conversationAction: handleConversationMessage, refresh: () => refresh(true) };
+  return { getCommandViewState: () => commandCenter.getState(), getState: state, getConversationState: () => structuredClone({activeConversationId,conversation:activeConversation()}), getWebviewState: () => structuredClone(webviewState()), conversationAction: handleConversationMessage, refresh: () => refresh(true) };
 }
 
 module.exports = { activate };

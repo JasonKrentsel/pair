@@ -13,7 +13,7 @@ const proposal = () => ({ id: 'review-1', revision: 1, fingerprint: 'snapshot-1'
 async function fixture() {
   const root = path.resolve('review-fixture');
   const session = { version: 1, root, sessionId: 'review-session', port: 1, token: 'a'.repeat(64), pid: process.pid };
-  const commands = new Map(), views = new Map(), requests = [], executed = [], warnings = [];
+  const commands = new Map(), views = new Map(), requests = [], executed = [], warnings = [], posted = [];
   const disposable = () => ({ dispose() {} });
   const event = () => disposable();
   let input = async () => 'Use the existing function instead';
@@ -53,9 +53,9 @@ async function fixture() {
   const api = module.exports.activate(context);
   await api.refresh();
   let html = '';
-  const view = { webview: { options: {}, get html() { return html; }, set html(value) { html = value; htmlWrites++; }, onDidReceiveMessage(fn) { messageHandler = fn; return disposable(); } }, onDidDispose: event };
+  const view = { webview: { options: {}, get html() { return html; }, set html(value) { html = value; htmlWrites++; }, onDidReceiveMessage(fn) { messageHandler = fn; return disposable(); }, postMessage: async message => { posted.push(structuredClone(message)); return true; } }, onDidDispose: event };
   views.get('pair.review').resolveWebviewView(view);
-  return { session, polls, api, commands, views, requests, executed, warnings, vscode,
+  return { session, polls, api, commands, views, requests, executed, warnings, vscode, posted,
     get html() { return html; }, get htmlWrites() { return htmlWrites; }, send: message => messageHandler(message),
     setInput(fn) { input = fn; }, setSessions(values) { available = values; }, setExtra(value) { extra = value; },
     setReview(value) { review = value; }, setProgress(value) { progress = value; },
@@ -124,11 +124,12 @@ test('unchanged polling and output chunks do not rebuild the review panel', asyn
   const f = await fixture(); t.after(f.close);
   const review = { ...proposal(), changes: [{ kind: 'bash', label: 'Run check', command: 'npm test', why: 'Verify this step.' }] };
   f.setReview(review); await f.api.refresh();
-  const writes = f.htmlWrites;
+  const writes = f.htmlWrites, messages = f.posted.length;
   await f.api.refresh();
   f.setProgress([{reviewId: review.id,index: 0,status: 'Running',text: 'First output',truncated: false}]); await f.api.refresh();
   f.setProgress([{reviewId: review.id,index: 0,status: 'Running',text: 'First output\nSecond output',truncated: false}]); await f.api.refresh();
   assert.equal(f.htmlWrites, writes);
+  assert.equal(f.posted.length, messages);
   assert.equal(f.requests.length, 0);
 });
 
@@ -159,11 +160,43 @@ test('new reviews reset action selection and shortened reviews clamp it with aut
   const original = { ...proposal(), changes };
   f.setReview(original); await f.api.refresh();
   await f.commands.get('pair.openChange')(2);
-  assert.match(f.html, /class="action selected" data-index="2"/);
+  assert.equal(f.posted.at(-1).state.selectedIndex,2);
   f.setReview({ ...original, revision: 2, fingerprint: 'shorter-snapshot', changes: changes.slice(0,2) }); await f.api.refresh();
-  assert.match(f.html, /class="action selected" data-index="1"/);
+  assert.equal(f.posted.at(-1).state.selectedIndex,1);
   f.setReview({ ...original, id: 'new-review', fingerprint: 'new-snapshot' }); await f.api.refresh();
-  assert.match(f.html, /class="action selected" data-index="0"/);
+  assert.equal(f.posted.at(-1).state.selectedIndex,0);
+  assert.equal(f.htmlWrites,1);
   assert.equal(f.api.getCommandViewState().reviewId, original.id, 'selection reset does not automatically open a new command');
   assert.equal(f.requests.length, 0);
+});
+
+
+test('React webview readiness replays latest state without remounting or bridge credentials', async t => {
+  const f=await fixture();t.after(f.close);
+  assert.equal(f.htmlWrites,1);
+  const boot=JSON.parse(f.html.match(/<script id="pair-bootstrap"[^>]*>([\s\S]*?)<\/script>/)[1]);
+  assert.deepEqual(boot.session,{sessionId:f.session.sessionId,root:f.session.root});
+  assert.equal(boot.sessionsCount,1);assert.equal(boot.version,require('../package.json').version);
+  assert.equal(boot.review,undefined);
+  f.setReview(proposal());await f.api.refresh();
+  const messages=f.posted.length;
+  f.send({action:'webview-ready'});
+  assert.equal(f.posted.length,messages+1);
+  const latest=f.posted.at(-1);assert.equal(latest.type,'pair-state');assert.equal(latest.state.review.id,'review-1');
+  assert.deepEqual(latest.state.session,{sessionId:f.session.sessionId,root:f.session.root});
+  assert.equal(latest.state.sessions,undefined);assert.equal(latest.state.terminal,undefined);assert.equal(latest.state.progress,undefined);
+  assert.doesNotMatch(JSON.stringify(latest),new RegExp(f.session.token));
+  assert.equal(f.htmlWrites,1);assert.equal(f.requests.length,0);
+});
+
+test('reconnection and permission changes update one mounted React app', async t => {
+  const f=await fixture();t.after(f.close);f.setReview(proposal());await f.api.refresh();
+  assert.equal(f.posted.at(-1).state.canApprove,true);
+  f.vscode.workspace.isTrusted=false;await f.api.refresh();
+  assert.equal(f.posted.at(-1).state.canApprove,false);assert.equal(f.posted.at(-1).state.trusted,false);
+  f.vscode.workspace.isTrusted=true;f.setSessions([]);await f.api.refresh();
+  assert.equal(f.posted.at(-1).state.connected,false);assert.equal(f.posted.at(-1).state.canApprove,false);
+  f.setSessions([{...f.session,sessionId:'fresh-session',port:2}]);await f.api.refresh();
+  assert.equal(f.posted.at(-1).state.session.sessionId,'fresh-session');assert.equal(f.posted.at(-1).state.connected,true);
+  assert.equal(f.htmlWrites,1);assert.equal(f.requests.length,0);
 });

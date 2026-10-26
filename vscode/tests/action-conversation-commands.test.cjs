@@ -59,13 +59,13 @@ test('opening Chat sends only a metadata request; sending keeps approval pending
  const f=await fixture();t.after(f.close);
  await f.commands.get('pair.chatAction')(0);
  const conversation=f.api.getConversationState().conversation,writes=f.htmlWrites;
- assert.equal(f.requests.length,1);assert.equal(f.requests[0].body.action,'open');assert.equal(f.requests[0].body.index,0);assert.equal(f.requests[0].body.mode,undefined);assert.equal(conversation.messages.length,0);assert.match(f.html,/Back to step/);
+ assert.equal(f.requests.length,1);assert.equal(f.requests[0].body.action,'open');assert.equal(f.requests[0].body.index,0);assert.equal(f.requests[0].body.mode,undefined);assert.equal(conversation.messages.length,0);assert.equal(f.posted.at(-1).state.activeConversationId,conversation.id);assert.equal(f.htmlWrites,1);
  const message={action:'conversation-send',conversationId:conversation.id,identity:decisionIdentity(f.review),mode:'chat',text:'Why share validation?',requestId:'ask-1'};
  await f.send(message);
  assert.equal(f.requests.at(-1).body.action,'send');assert.equal(f.requests.at(-1).body.mode,'chat');assert.equal(f.requests.at(-1).body.gate,2);assert.equal(f.review.pending,true);
- assert.equal(f.htmlWrites,writes);assert.equal(f.posted.at(-1).running,true);
+ assert.equal(f.htmlWrites,writes);assert.equal(f.posted.at(-1).state.actionConversations[0].status,'running');
  f.conversations[0].messages.push({role:'assistant',text:'Both callers reject invalid values.'});f.conversations[0].status='idle';await f.api.refresh();
- assert.equal(f.htmlWrites,writes);assert.match(f.posted.at(-1).messages.at(-1).html,/Both callers/);
+ assert.equal(f.htmlWrites,writes);assert.match(f.posted.at(-1).state.actionConversations[0].messages.at(-1).text,/Both callers/);
  await f.send({action:'conversation-back',conversationId:conversation.id});
  assert.equal(f.api.getConversationState().activeConversationId,undefined);assert.equal(f.review.pending,true);assert.equal(f.requests.some(r=>r.route==='/decision'),false);
 });
@@ -80,9 +80,9 @@ test('candidate preview compares the current proposal and revision; use revision
  assert.equal(f.opened.get(diff[2].toString()).languageId,'typescript');
  await f.send({...message,action:'conversation-adopt'});
  assert.equal(f.requests.at(-1).body.action,'adopt');assert.equal(f.review.revision,2);assert.equal(f.review.pending,true);assert.equal(f.api.getConversationState().activeConversationId,undefined);
- const confirmation=f.posted.findLast(patch=>patch.type==='action-conversation'&&patch.id===c.id);
- assert.equal(confirmation.status,'Revision added to step · Awaiting approval');assert.equal(confirmation.warning,'');assert.equal(confirmation.canSend,false);
- assert.match(f.html,/data-action="approve"/);assert.doesNotMatch(f.html,/id="conversation-state"/);
+ const final=f.posted.at(-1).state;
+ assert.equal(final.adoptedRevision.conversationId,c.id);assert.equal(final.adoptedRevision.identity.revision,2);
+ assert.equal(final.activeConversationId,undefined);assert.equal(final.canApprove,true);assert.equal(f.htmlWrites,1);
  assert.match(f.executed.findLast(args=>args[0]==='vscode.diff')[3],/Before ↔ Proposed/);
  assert.equal(f.requests.some(r=>r.route==='/decision'),false);
 });
@@ -105,7 +105,7 @@ test('selected lines are mapped from the proposed snapshot and before-side lines
  await assert.rejects(f.commands.get('pair.chatSelection')(),/Proposed side/);
  f.vscode.window.activeTextEditor={document:f.opened.get(diff[2].toString()),selection};
  await f.commands.get('pair.chatSelection')();
- assert.equal(f.requests.at(-1).body.startLine,2);assert.equal(f.requests.at(-1).body.endLine,3);assert.match(f.html,/Lines 2–3/);
+ assert.equal(f.requests.at(-1).body.startLine,2);assert.equal(f.requests.at(-1).body.endLine,3);assert.equal(f.posted.at(-1).state.actionConversations[0].scope.startLine,2);assert.equal(f.posted.at(-1).state.actionConversations[0].scope.endLine,3);
  const original=f.vscode.window.activeTextEditor.document;f.vscode.window.activeTextEditor.document={...original,getText:()=>original.getText()+' changed'};
  await assert.rejects(f.commands.get('pair.chatSelection')(),/snapshot was modified/);
 });
@@ -115,10 +115,10 @@ test('Chat resumes its selected-line scope instead of creating a blank whole-act
  await f.commands.get('pair.chatAction')({index:0,startLine:2,endLine:3});
  const conversation=f.api.getConversationState().conversation;
  await f.send({action:'conversation-back',conversationId:conversation.id});
- assert.match(f.html,/data-conversation-id="conversation-1"/);
+ assert.equal(f.posted.at(-1).state.actionConversations[0].id,'conversation-1');
  await f.send({action:'chat-action',index:0,conversationId:conversation.id,identity:decisionIdentity(f.review)});
  assert.equal(f.conversations.length,1);assert.equal(f.api.getConversationState().activeConversationId,conversation.id);
- assert.equal(f.requests.at(-1).body.startLine,2);assert.equal(f.requests.at(-1).body.endLine,3);assert.doesNotMatch(f.html,/name="mode"|Request revision/);
+ assert.equal(f.requests.at(-1).body.startLine,2);assert.equal(f.requests.at(-1).body.endLine,3);assert.equal(f.htmlWrites,1);
 });
 
 test('two actions editing the same file use distinct native snapshots and keep line targeting exact',async t=>{

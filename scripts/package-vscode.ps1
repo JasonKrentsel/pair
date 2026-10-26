@@ -2,6 +2,8 @@ param([string]$Destination)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $extensionRoot = Join-Path $projectRoot 'vscode'
+& npm.cmd --prefix $extensionRoot run build:webview
+if ($LASTEXITCODE -ne 0) { throw 'The Pair webview build failed.' }
 $manifest = Get-Content -LiteralPath (Join-Path $extensionRoot 'package.json') -Raw | ConvertFrom-Json
 if (-not $Destination) { $Destination = Join-Path $projectRoot "artifacts\pi-pair-$($manifest.version).vsix" }
 $Destination = [IO.Path]::GetFullPath($Destination)
@@ -37,7 +39,7 @@ try {
     $writer = [IO.StreamWriter]::new($entry.Open(), [Text.UTF8Encoding]::new($false))
     try { $writer.Write($item[1]) } finally { $writer.Dispose() }
   }
-  foreach ($file in @('package.json', 'extension.cjs', 'client.cjs', 'command-view.cjs', 'command-center.cjs', 'review-panel.cjs', 'action-conversation.cjs', 'markdown.cjs', 'README.md', 'media/pair.svg', 'media/terminal-client.js', 'media/vendor/xterm.js', 'media/vendor/xterm.css', 'media/vendor/addon-fit.js', 'media/vendor/highlight.js', 'media/vendor/powershell.js', 'media/vendor/licenses.txt')) {
+  foreach ($file in @('package.json', 'extension.cjs', 'client.cjs', 'command-view.cjs', 'command-center.cjs', 'webview.cjs', 'media/ui/app.js', 'media/ui/app.css', 'markdown.cjs', 'README.md', 'media/pair.svg', 'media/terminal-client.js', 'media/vendor/xterm.js', 'media/vendor/xterm.css', 'media/vendor/addon-fit.js', 'media/vendor/highlight.js', 'media/vendor/powershell.js', 'media/vendor/licenses.txt')) {
     [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, (Join-Path $extensionRoot $file), "extension/$file") | Out-Null
   }
 } finally { $archive.Dispose(); $stream.Dispose() }

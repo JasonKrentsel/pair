@@ -1,10 +1,10 @@
 # Pair for Pi
 
-Pair 0.10.1 keeps the current step in one sidebar: an ordered list of actions, their explanations, and an approval footer that stays visible while the content scrolls. Native diffs and the command terminal open in the center editor. The extension preserves your sidebar position, including a right-side layout.
+Pair 0.11.0 keeps the current step in one React sidebar: an ordered list of actions, their explanations, and an approval footer that stays visible while the content scrolls. Native diffs and the command terminal open in the center editor. The extension preserves your sidebar position, including a right-side layout.
 
 ## Use
 
-1. Install this companion and reload Pair 0.10.1 in Pi when idle.
+1. Install this companion and reload Pair 0.11.0 in Pi when idle.
 2. Open the same project folder in Pi and VS Code. One matching session connects automatically. Use **Pair: Select Pi Session** if several sessions share the folder.
 3. Select an action to open its native diff or command terminal. Expand **Why this action** for its rationale and any section notes. Use **Next Action in Step** / **Previous Action in Step** to navigate from the editor.
 4. Choose **Approve step**, **Deny**, or **Deny with note**. Approval covers all listed actions in order, once. A failed or interrupted action stops the remaining actions.
@@ -34,6 +34,8 @@ This companion supports local desktop workspaces; remote SSH, WSL, containers an
 ## Development
 
 Run `npm run test:vscode` from the repository root and `npm run package:vscode` to build the local VSIX. Browser terminal assets are pinned and bundled; the webviews make no CDN requests.
+
+The sidebar and Chat are a React/TypeScript app built with Vite. See [webview development](webview/README.md) for the shared Chrome preview, fixture scenarios, visual tests and architecture. Packaging builds local production assets; the installed extension needs no development server.
 
 For isolated integration tests, set `PI_PAIR_BRIDGE_DIR` to a disposable registry directory. The activation API exposes `getState()` (a cloned session/root/connection/review/conversation/progress/terminal state, never credentials), `getCommandViewState()`, and `refresh()`. No API bypasses Pi's approval validation.
 

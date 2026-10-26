@@ -2,7 +2,7 @@
   "name": "pi-pair",
   "displayName": "Pair for Pi",
   "description": "Review exact Pi proposals and approve steps inside your project in VS Code.",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "publisher": "local-pair",
   "license": "UNLICENSED",
   "engines": {
@@ -29,12 +29,30 @@
     }
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@highlightjs/cdn-assets": "11.12.0",
+    "@playwright/test": "1.64.1",
+    "@radix-ui/react-collapsible": "1.2.1",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
     "@xterm/addon-fit": "0.11.0",
-    "@xterm/xterm": "6.0.0"
+    "@xterm/xterm": "6.0.0",
+    "lucide-react": "1.61.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-markdown": "10.1.0",
+    "rehype-highlight": "7.0.2",
+    "remark-gfm": "4.0.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.5"
   },
   "scripts": {
-    "test": "node --test tests/*.test.cjs"
+    "test": "node --test tests/*.test.cjs",
+    "dev": "vite --config webview/vite.config.mts",
+    "build:webview": "tsc -p webview/tsconfig.json && vite build --config webview/vite.config.mts",
+    "test:ui": "npm run build:webview && playwright test --config webview/playwright.config.ts"
   },
   "contributes": {
     "viewsContainers": {

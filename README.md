@@ -4,7 +4,7 @@ Pair adds an explanation and a permission decision to the next coherent step. Re
 
 ## Current status
 
-Version 0.10.1 brings questions and small revisions together under **Chat**. Open a chat about one file, command or selected proposed lines, then ask naturally or describe what to change. Opening and drafting create no fork or model request; the first Send creates the scoped conversation. Suggested revisions remain separate until **Use revision**, and the updated whole step still needs approval. Review Desk, checkpoints and pinned constraints remain removed.
+Version 0.11.0 rebuilds the VS Code sidebar and Chat with React, TypeScript and Vite. The shared browser preview makes visual iteration fast while the installed companion keeps native diffs, terminal output and exact step approval. Chat still starts its child session only on the first Send. Review Desk, checkpoints and pinned constraints remain removed.
 
 ## Everyday use
 
@@ -98,6 +98,7 @@ Arguments, approvals, and results remain in local Pi history. Denial does not ro
 - extensions/pair/external.ts — exact before/proposed snapshots and VS Code diff handoff.
 - extensions/pair/bridge.ts and review-connection.ts — authenticated local review transport and one decision shared by both interfaces.
 - vscode/ — native editor companion, local client tests, and installation documentation.
+- vscode/webview/ — shared React sidebar and Chat, Vite preview, and Chrome visual tests.
 - extensions/pair/context.ts — stable instruction contract, concise state updates, and compatibility normalization.
 - extensions/pair/index.ts — lifecycle, optional designs, compatibility, and tool guard.
 - extensions/pair/state.ts and files.ts — saved state, context, paths, snapshots, and older-review support.
