@@ -6,6 +6,7 @@ const { canonicalRoot, containedFile, discoverSessions, request, validReview, id
 const { renderWebview } = require('./webview.cjs');
 const { validProgress } = require('./command-view.cjs');
 const { createCommandCenter } = require('./command-center.cjs');
+const { createRevisionComparison } = require('./revision-comparison.cjs');
 
 const SCHEME = 'pair-review';
 function activate(context) {
@@ -22,6 +23,7 @@ function activate(context) {
   let adoptedRevision;
   let conversationBusy = false;
   let commandCenter;
+  let revisionComparison;
   let connected = false;
   let busy = false;
   let errorMessage = '';
@@ -322,12 +324,13 @@ function activate(context) {
     await vscode.commands.executeCommand('pair.review.focus');
   }
 
-  function makeDocument(currentSession, currentReview, change, side, content, filename = change.label) {
+  function makeDocument(currentSession, currentReview, change, side, content, filename = change.label, index = currentReview.changes.indexOf(change)) {
+    if(!Number.isInteger(index) || index<0 || index>=currentReview.changes.length)throw new Error('The review snapshot has no matching action. Open the current step again.');
     const safePath = filename.replace(/\\/g, '/').replace(/^\/+/, '');
-    const uri = vscode.Uri.from({ scheme: SCHEME, authority: currentSession.sessionId, path: `/${currentReview.id}/${side}/${Math.max(0,currentReview.changes.indexOf(change))}/${safePath}`, query: new URLSearchParams(identity(currentReview)).toString() });
+    const uri = vscode.Uri.from({ scheme: SCHEME, authority: currentSession.sessionId, path: `/${currentReview.id}/${side}/${index}/${safePath}`, query: new URLSearchParams(identity(currentReview)).toString() });
     // Snapshots are append-only; a later result never changes what an older diff showed.
     if (!documents.has(uri.toString())) documents.set(uri.toString(), content);
-    documentTargets.set(uri.toString(), {sessionId:currentSession.sessionId,identity:decisionIdentity(currentReview),index:currentReview.changes.indexOf(change),side});
+    documentTargets.set(uri.toString(), {sessionId:currentSession.sessionId,identity:decisionIdentity(currentReview),index,side});
     return uri;
   }
 
@@ -497,14 +500,29 @@ function activate(context) {
     const original=candidate.original,proposed=candidate.preview,command=typeof original.command==='string';
     const before=command?original.command:original.after,after=command?proposed.command:proposed.after;
     if(typeof before!=='string'||typeof after!=='string')throw new Error('The suggested revision has no complete preview.');
+    const currentSession={...selected},expected=decisionIdentity(review),candidateId=candidate.id;
+    const isCurrent=()=>connected && selected?.sessionId===currentSession.sessionId && matchesWorkspace(currentSession)
+      && sameDecision(review,expected) && review.pending
+      && activeConversation()?.id===conversation.id && activeConversation()?.candidate?.id===candidateId;
+    if(!isCurrent())throw new Error('This revision belongs to an earlier step. Open the current action before comparing versions.');
+    if(!command) {
+      const file=containedFile(currentSession.root,original.label);
+      if(!file)throw new Error('The revision file is outside the current workspace.');
+      const languageDocument=await vscode.workspace.openTextDocument(makeDocument(currentSession,review,review.changes[conversation.index],'proposed',before));
+      const language=await languageFor(proposed,currentSession,languageDocument);
+      await revisionComparison.open({sessionId:currentSession.sessionId,label:original.label,file,baseline:original.before,original:before,revised:after,language,isCurrent,
+        isSameFile:value=>canonicalRoot(value)===canonicalRoot(file)});
+      return;
+    }
     const snapshot={...review,id:conversation.reviewId,revision:conversation.revision,fingerprint:conversation.fingerprint};
     const filename=command?(/powershell/i.test(original.kind)?'command.ps1':'command.sh'):original.label;
-    const left=makeDocument({...selected},snapshot,original,'candidate-original-'+candidate.id,before,filename);
-    const right=makeDocument({...selected},snapshot,proposed,'candidate-proposed-'+candidate.id,after,filename);
+    const left=makeDocument({...selected},snapshot,original,'candidate-original-'+candidate.id,before,filename,conversation.index);
+    const right=makeDocument({...selected},snapshot,proposed,'candidate-proposed-'+candidate.id,after,filename,conversation.index);
     const leftDoc=await vscode.workspace.openTextDocument(left),rightDoc=await vscode.workspace.openTextDocument(right);
     const language=command?(/powershell/i.test(original.kind)?'powershell':'shellscript'):await languageFor(proposed,selected,rightDoc);
     if(language&&(await vscode.languages.getLanguages()).includes(language)){await vscode.languages.setTextDocumentLanguage(leftDoc,language);await vscode.languages.setTextDocumentLanguage(rightDoc,language);}
-    await vscode.commands.executeCommand('vscode.diff',left,right,filename+' — Current proposal ↔ Suggested revision',{preview:true,preserveFocus:false,...(vscode.ViewColumn?{viewColumn:vscode.ViewColumn.Active}:{})});
+    if(!isCurrent())return;
+    await vscode.commands.executeCommand('vscode.diff',left,right,filename+' — Original command ↔ Revised command',{preview:true,preserveFocus:true,...(vscode.ViewColumn?{viewColumn:vscode.ViewColumn.Active}:{})});
     pruneSnapshots();
   }
 
@@ -553,6 +571,7 @@ function activate(context) {
     try { return await callback(...args); } catch (error) { showError(error); throw error; }
   }));
   commandCenter = createCommandCenter(vscode, context, { getState: liveState, sendTerminal: body => { if(!selected || !connected || !matchesWorkspace(selected) || !vscode.workspace.isTrusted)throw new Error('Reconnect to the trusted Pi workspace.'); return request({...selected},'POST','/terminal',body); }, openNative: (snapshot,index) => openSnapshot(snapshot,index,{native:true}), showError });
+  revisionComparison = createRevisionComparison(vscode, context);
   register('pair.review', openReview);
   register('pair.chatAction', input => openActionConversation(input));
   register('pair.chatSelection', () => openActionConversation(selectionTarget()));

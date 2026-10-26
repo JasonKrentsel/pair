@@ -136,6 +136,8 @@ h1, h2, h3, p { margin: 0; }
 .chat-target h1 { font-family: var(--vscode-editor-font-family, Consolas, monospace); font-size: 13px; font-weight: 550; line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .chat-target p { color: var(--pair-muted); font-size: 12px; line-height: 1.6; margin-top: 4px; }
 .chat-target p > span:last-child { color: var(--pair-fg); }
+.chat-capabilities { display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:12px;padding-top:9px;border-top:1px solid var(--pair-soft-border);font-size:12px;color:var(--pair-muted); }
+.capability-limit { margin-left:auto; }
 .meta-separator { margin: 0 6px; }
 .source-context { margin-top: 9px; }
 .source-context .disclosure { width: 100%; font-size: 12px; padding-left: 0; }
@@ -169,6 +171,7 @@ h1, h2, h3, p { margin: 0; }
 .revision-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
 .revision-heading > span:first-child { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--pair-fg); font-weight: 600; }
 .revision-card .prose { font-size: 14px; line-height: 1.65; }
+.revision-baselines { font-size:12px;line-height:1.6;margin-top:10px;color:var(--pair-muted); }
 .revision-actions { display: flex; gap: 7px; margin-top: 13px; flex-wrap: wrap; }
 .revision-actions .button { flex: 1; font-size: 12px; padding-inline: 8px; white-space: nowrap; }
 .revision-note { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; color: var(--pair-muted); font-size: 12px; line-height: 1.55; }
@@ -251,6 +254,17 @@ h1, h2, h3, p { margin: 0; }
 .reply-detail-content pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--vscode-editor-font-family,monospace);font-size:12px;line-height:1.6;max-height:260px;overflow:auto;padding:8px;background:var(--vscode-textCodeBlock-background,var(--pair-surface));border-radius:4px}
 .detail-meta,.tool-not-run{margin-left:auto;white-space:nowrap;font-size:12px}
 .tool-not-run{color:var(--vscode-editorWarning-foreground,#d7ba7d)}
+.tool-state{display:inline-flex;align-items:center;gap:5px;margin-left:auto;font-size:12px;white-space:nowrap;color:var(--pair-muted)}
+.tool-completed .tool-state{color:var(--vscode-testing-iconPassed,var(--pair-fg))}
+.tool-failed .tool-state,.tool-error{color:var(--vscode-errorForeground,var(--pair-fg))}
+.tool-not-run .tool-state{color:var(--vscode-editorWarning-foreground,var(--pair-fg))}
+.tool-section{margin:10px 0}
+.tool-section h3{font-size:12px;line-height:1.5;font-weight:600;margin:0 0 6px;color:var(--pair-fg)}
+.tool-section .prose pre{margin:0}
+.tool-section pre code{font:inherit;background:transparent;padding:0;border:0;white-space:inherit}
+.tool-error{font-size:13px;line-height:1.6;margin:8px 0}
+.reply-parts>.prose{margin:12px 0}
+.reply-parts>.prose:first-child{margin-top:0}
 .detail-caption{font-size:12px;line-height:1.6;color:var(--pair-muted);margin:8px 0 0}
 .reply-detail-content>.detail-caption:first-child{margin-top:0}
 .reply-failure{margin:12px 0;padding:12px;border:1px solid var(--vscode-inputValidation-warningBorder,#9d8500);background:color-mix(in srgb,var(--vscode-editorWarning-foreground,#d7ba7d) 6%,var(--pair-bg));color:var(--pair-fg);border-radius:4px;font-size:13px;line-height:1.6}

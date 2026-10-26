@@ -11,7 +11,7 @@ npm ci --prefix vscode
 npm --prefix vscode run dev
 ```
 
-Open `http://127.0.0.1:5173/?scenario=pending`. Other scenarios are `chat`, `candidate`, `command`, `running`, `disconnected`, `long`, `error`, `activity`, and `completed`. The activity fixture includes reasoning, a blocked tool call, cache counts and an inline retry. Add `&theme=light` for the light palette. Resize the browser to 300, 380, or 520 pixels wide to reproduce a right sidebar.
+Open `http://127.0.0.1:5173/?scenario=pending`. Other scenarios are `chat`, `candidate`, `command`, `running`, `disconnected`, `long`, `error`, `activity`, `followup`, and `completed`. The activity fixture includes a blocked tool call and inline retry; followup shows ordered reads, results, reasoning and a scoped revision. Add `&theme=light` for the light palette. Resize the browser to 300, 380, or 520 pixels wide to reproduce a right sidebar.
 
 The development adapter supplies synthetic state and records UI messages. Its replies are scripted, and its approval controls only change fixture state. It never discovers a Pi session, calls a model, writes project files, or executes commands. The preview adapter and fixture palette are excluded from production builds.
 
@@ -38,3 +38,5 @@ The production build emits `vscode/media/ui/app.js` and `app.css`. Packaging reb
 - `../extension.cjs` owns session discovery, native editor integration, and permission validation.
 
 The host mounts the application once per webview lifecycle and sends deduplicated state snapshots. Drafts, disclosure state, and scroll are local. Chat opening creates no fork; only Send invokes the existing backend. No frontend framework state or preview events enter model context.
+
+`ReplyContent.tsx` renders the backend's ordered activity parts. It never reconstructs execution order by grouping all reasoning or tools first. Inputs and results remain expandable; user scroll and drafts survive new parts. The native revision comparison lives in `../revision-comparison.cjs`, uses public editor-layout APIs, and never edits a project file.

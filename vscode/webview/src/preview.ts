@@ -13,7 +13,7 @@ function fixture(scenario:string):PairState {
     {label:'tests/greeting/display-name.test.ts',kind:'New file',before:'',after:'import {test} from "node:test";\nimport {strict as assert} from "node:assert";\nimport {displayName} from "../../src/greeting/display-name.js";\n\ntest("an empty name uses the friendly fallback", () => {\n  assert.equal(displayName(""), "friend");\n});\n',added:7,removed:0,why:'Capture the empty-name behavior with a focused regression test. Existing response fields are unaffected.'},
     {label:'npm run check && npm run test:greeting',kind:'bash',command:'npm run check &&\n  npm run test:greeting',cwd:'/workspace/greeting-service',why:'Check the types and run the focused greeting tests before the step is complete. This command uses the existing dependencies.'},
   ];
-  const state:PairState={version:'0.11.0-preview',session:{sessionId:'preview-session',root:'/workspace/greeting-service'},sessionsCount:1,connected:true,busy:false,review:{id:'preview-step',revision:1,fingerprint:'preview-v1',gate:1,title:'Give empty names a friendly greeting',why:'Keep the reply predictable for callers, with a focused implementation and test. Review each action below before running the step.',changes,pending:true,status:'Awaiting permission'},selectedIndex:0,trusted:true,canDecide:true,canApprove:true,dirtyFiles:[],alteredSnapshots:0,errorMessage:'',conversationAvailable:true,actionConversations:[],conversationBusy:false};
+  const state:PairState={version:'0.12.0-preview',session:{sessionId:'preview-session',root:'/workspace/greeting-service'},sessionsCount:1,connected:true,busy:false,review:{id:'preview-step',revision:1,fingerprint:'preview-v1',gate:1,title:'Give empty names a friendly greeting',why:'Keep the reply predictable for callers, with a focused implementation and test. Review each action below before running the step.',changes,pending:true,status:'Awaiting permission'},selectedIndex:0,trusted:true,canDecide:true,canApprove:true,dirtyFiles:[],alteredSnapshots:0,errorMessage:'',conversationAvailable:true,actionConversations:[],conversationBusy:false};
   if(scenario==='long') {
     state.review!.title='Keep configuration paths explicit across all application entry points';
     state.review!.changes=Array.from({length:12},(_,i)=>({...changes[i%3],label:i%3===2?changes[2].label:`src/application/configuration/providers/environment-${i+1}/resolve-explicit-provider-configuration.ts`,why:`Action ${i+1} keeps the selected provider configuration explicit.\n\nThe loader resolves the path relative to the invocation directory and preserves the existing error message when a file is missing. No additional configuration is discovered automatically.\n\n\`\`\`ts\nconst selected = resolve(cwd, options.models);\nreturn loadProviderConfiguration(selected);\n\`\`\``}));
@@ -22,7 +22,7 @@ function fixture(scenario:string):PairState {
   if(scenario==='disconnected') {state.connected=false;state.canDecide=false;state.canApprove=false;state.conversationAvailable=false;state.errorMessage='Pi is disconnected. Start Pi in this folder or use /pair code.';}
   if(scenario==='running') {state.review!.pending=false;state.review!.status='Applying 2 of 3';state.review!.changes[0].status='Applied';state.review!.changes[1].status='Running';state.canDecide=false;state.canApprove=false;state.conversationAvailable=false;}
   if(scenario==='completed') {state.review!.pending=false;state.review!.status='Applied';state.review!.changes.forEach(change=>{change.status='Applied';});state.canDecide=false;state.canApprove=false;state.conversationAvailable=false;}
-  if(['chat','candidate','error','activity'].includes(scenario)) {
+  if(['chat','candidate','error','activity','followup'].includes(scenario)) {
     const thread:Conversation={...identityOf(state.review!),id:'preview-chat-0',index:0,startLine:2,endLine:3,status:'ready',messages:[{role:'user',text:'Why is this change safe for the protocol?'},{role:'assistant',text:answer}]};
     if(scenario==='candidate') {thread.messages.push({role:'user',text:'Trim the whitespace first. Keep the fallback and protocol unchanged.'},{role:'assistant',text:'Trim the name before choosing the fallback. Only these two lines change; the surrounding function and other actions stay the same.'});thread.candidate=candidate(thread,changes[0]);}
     if(scenario==='error') {thread.status='error';thread.error='The model did not finish a usable reply. Try the message again.';}
@@ -30,6 +30,16 @@ function fixture(scenario:string):PairState {
       thread.messages=[{role:'user',text:'What is a DDL and a dialect?'},{id:'reply-1',role:'assistant',text:'**DDL** means Data Definition Language: SQL statements such as `CREATE TABLE`. A **dialect** is the SQL syntax and features specific to a database, such as PostgreSQL or SQLite.',reasoning:'Compare the terms using the proposed SQLAlchemy command. No database connection is needed to explain them.',usage:{input:240,output:82,cacheRead:4096,cacheWrite:0}},
         {role:'user',text:'Can you explain the command?'},{id:'reply-2',role:'assistant',text:'',reasoning:'The command compiles table definitions for two databases.',toolCalls:[{id:'call-1',name:'read',arguments:JSON.stringify({path:'src/database/schema.py'},null,2),status:'not-run'}],error:'The model requested a tool. Chat cannot run tools; no tool was run. Retry to ask for an explanation or a suggested revision.',usage:{input:300,output:25,cacheRead:0,cacheWrite:0}}];
       thread.status='error';thread.error=thread.messages.at(-1)!.error;
+    }
+    if(scenario==='followup') {
+      const explanation='The reply still contains `requestId` and `message`. I checked the neighboring schema before suggesting a change. Trim only the display name; the protocol and other actions stay the same.';
+      thread.messages=[{role:'user',text:'Check the request and reply types, then trim the name without changing the protocol.'},{id:'read-reply',role:'assistant',text:explanation,parts:[
+        {type:'text',id:'read-intro',text:'I’ll check the neighboring schema before changing these lines.'},
+        {type:'tool',id:'read-schema',name:'read',arguments:JSON.stringify({path:'src/greeting/schema.ts'},null,2),status:'completed',result:'1 export interface GreetingRequest { name: string; requestId: string }\n2 export interface GreetingReply { requestId: string; message: string }'},
+        {type:'reasoning',id:'read-reasoning',text:'The public fields match the inherited protocol. A local trim preserves the caller’s identifier.'},
+        {type:'text',id:'read-answer',text:explanation},
+      ],usage:{input:560,output:150,cacheRead:8192,cacheWrite:0}}];
+      thread.candidate=candidate(thread,changes[0]);
     }
     state.actionConversations=[thread];state.activeConversationId=thread.id;
   }

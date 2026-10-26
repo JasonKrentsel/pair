@@ -39,7 +39,7 @@ try {
     $writer = [IO.StreamWriter]::new($entry.Open(), [Text.UTF8Encoding]::new($false))
     try { $writer.Write($item[1]) } finally { $writer.Dispose() }
   }
-  foreach ($file in @('package.json', 'extension.cjs', 'client.cjs', 'command-view.cjs', 'command-center.cjs', 'webview.cjs', 'media/ui/app.js', 'media/ui/app.css', 'markdown.cjs', 'README.md', 'media/pair.svg', 'media/terminal-client.js', 'media/vendor/xterm.js', 'media/vendor/xterm.css', 'media/vendor/addon-fit.js', 'media/vendor/highlight.js', 'media/vendor/powershell.js', 'media/vendor/licenses.txt')) {
+  foreach ($file in @('package.json', 'extension.cjs', 'client.cjs', 'command-view.cjs', 'command-center.cjs', 'revision-comparison.cjs', 'webview.cjs', 'media/ui/app.js', 'media/ui/app.css', 'markdown.cjs', 'README.md', 'media/pair.svg', 'media/terminal-client.js', 'media/vendor/xterm.js', 'media/vendor/xterm.css', 'media/vendor/addon-fit.js', 'media/vendor/highlight.js', 'media/vendor/powershell.js', 'media/vendor/diff.cjs', 'media/vendor/licenses.txt')) {
     [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, (Join-Path $extensionRoot $file), "extension/$file") | Out-Null
   }
 } finally { $archive.Dispose(); $stream.Dispose() }

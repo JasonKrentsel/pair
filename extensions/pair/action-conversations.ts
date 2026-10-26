@@ -150,6 +150,11 @@ export class ActionConversations {
       } catch (error) {
         if (this.closed || view.status === "closed") return;
         view.status = abort.signal.aborted ? "ready" : "error";
+        // A stopped stream may suppress late SDK tool-end events. Settle the
+        // presentation state here instead of leaving a read spinning forever.
+        const unfinished = abort.signal.aborted ? "Read stopped before completing." : "Read did not complete.";
+        reply.parts = reply.parts?.map(part => part.type === "tool" && part.status === "running" ? { ...part, status: "failed", error: unfinished } : part);
+        reply.toolCalls = reply.toolCalls?.map(call => call.status === "running" ? { ...call, status: "failed", error: unfinished } : call);
         if (abort.signal.aborted) { reply.stopped = true; if (!reply.text) reply.text = "Reply stopped. The proposed step is unchanged."; }
         else { reply.error = String(error instanceof Error ? error.message : error).slice(0,700); view.error = reply.error; }
       } finally { if (record.abort === abort) record.abort = undefined; this.touch(); }

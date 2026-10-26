@@ -6,10 +6,15 @@ export interface Change {
 }
 export interface Review { id: string; revision: number; fingerprint: string; gate?: number; title: string; why?: string; changes: Change[]; pending: boolean; status: string }
 export interface Candidate { id: string; summary: string; added?: number; removed?: number; original: Change; preview: Change }
+export type ActionReplyPart =
+  | {type:'text';id:string;text:string}
+  | {type:'reasoning';id:string;text:string;redacted?:boolean}
+  | {type:'tool';id:string;name:string;arguments:string;status:'running'|'completed'|'failed'|'not-run';result?:string;error?:string};
 export interface ChatMessage {
   id?:string; requestId?:string; role:'user'|'assistant'; text:string; error?:string; stopped?:boolean;
   reasoning?:string; reasoningRedacted?:boolean; rawResponse?:string;
-  toolCalls?:{id:string;name:string;arguments:string;status:'not-run'}[];
+  parts?:ActionReplyPart[];
+  toolCalls?:Omit<Extract<ActionReplyPart,{type:'tool'}>,'type'>[];
   usage?:{input?:number;output?:number;cacheRead?:number;cacheWrite?:number;reasoning?:number};
 }
 export interface Conversation extends DecisionIdentity {
