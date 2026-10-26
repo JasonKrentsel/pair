@@ -20,7 +20,7 @@ function activate(context) {
   let actionConversations = [];
   let conversationAvailable = false;
   let activeConversationId;
-  let conversationMode = 'ask';
+  let adoptedRevision;
   let conversationBusy = false;
   let displayedConversation;
   let displayedConversationUpdate;
@@ -64,7 +64,7 @@ function activate(context) {
 
   const activeConversation = () => actionConversations.find(item => item.id === activeConversationId);
   const conversationAssets = () => reviewView?.webview.asWebviewUri && context.extensionUri ? Object.fromEntries(['vendor/highlight.js','vendor/powershell.js'].map(name => [name,reviewView.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri,'media',name)).toString()])) : undefined;
-  const conversationOptions = () => ({ review,index:activeConversation()?.index ?? selectedIndex,conversation:activeConversation(),mode:conversationMode,connected,trusted:vscode.workspace.isTrusted,busy:conversationBusy,errorMessage:connected?'':errorMessage,assets:conversationAssets() });
+  const conversationOptions = () => ({ review,adoptedRevision:adoptedRevision?.sessionId === selected?.sessionId ? adoptedRevision : undefined,index:activeConversation()?.index ?? selectedIndex,conversation:activeConversation(),connected,trusted:vscode.workspace.isTrusted,busy:conversationBusy,errorMessage:connected?'':errorMessage,assets:conversationAssets() });
   const scopeDecoration = vscode.window.createTextEditorDecorationType?.({isWholeLine:true,backgroundColor:new vscode.ThemeColor('editor.rangeHighlightBackground'),borderWidth:'0 0 0 2px',borderStyle:'solid',borderColor:new vscode.ThemeColor('focusBorder')});
   if(scopeDecoration)context.subscriptions.push(scopeDecoration);
   let decoratedScope;
@@ -137,7 +137,7 @@ function activate(context) {
       view.webview.onDidReceiveMessage(message => {
         if (!message || typeof message !== 'object') return;
         if (message.action?.startsWith('conversation-')) { void handleConversationMessage(message).catch(error => { void reviewView?.webview.postMessage?.({type:'action-conversation-error',id:message.conversationId,text:error.message}); }); return; }
-        if (message.action === 'ask-action' || message.action === 'adjust-action') { void openActionConversation({index:message.index,identity:message.identity,conversationId:message.conversationId,mode:message.action === 'adjust-action'?'adjust':message.conversationId?undefined:'ask'}).catch(showError); return; }
+        if (message.action === 'chat-action') { void openActionConversation({index:message.index,identity:message.identity,conversationId:message.conversationId}).catch(showError); return; }
         if (message.action === 'session') return void chooseSession().catch(showError);
         if (message.action === 'open-action') {
           if (sameReview(review, message.identity) && Number.isInteger(message.index)) void openChange(message.index).catch(showError);
@@ -373,7 +373,7 @@ function activate(context) {
       await refresh(true);
       const id = result.data?.conversationId;
       if (typeof id !== 'string' || !actionConversations.some(item=>item.id===id)) throw new Error('Pi did not open the action conversation. Refresh Pair and try again.');
-      selectedIndex = index; conversationMode = ['ask','adjust'].includes(target.mode) ? target.mode : undefined;activeConversationId = id;displayedConversation = undefined;
+      selectedIndex = index; activeConversationId = id;displayedConversation = undefined;
       await vscode.commands.executeCommand('workbench.view.extension.pair');
       await vscode.commands.executeCommand('pair.review.focus');
       update();
@@ -397,7 +397,7 @@ function activate(context) {
     const session={...selected};
     const body={action,...expected,index:conversation.index,conversationId:conversation.id};
     if(action==='send') {
-      if(!['ask','adjust'].includes(message.mode)||typeof message.text!=='string'||!message.text.trim()||message.text.length>3000||typeof message.requestId!=='string')throw new Error('Enter a message of up to 3,000 characters.');
+      if(message.mode !== 'chat'||typeof message.text!=='string'||!message.text.trim()||message.text.length>3000||typeof message.requestId!=='string')throw new Error('Enter a message of up to 3,000 characters.');
       Object.assign(body,{mode:message.mode,text:message.text.trim(),requestId:message.requestId});
     }
     if(action==='adopt'||action==='discard') {
@@ -407,8 +407,12 @@ function activate(context) {
     if(action==='adopt'&&(dirtyFiles().length||alteredSnapshots().length))throw new Error('Save affected files and reopen any modified review snapshots before using a revision.');
     conversationBusy=true;update();
     try {
-      await request(session,'POST','/conversation',body);
+      const result = await request(session,'POST','/conversation',body);
       if(selected?.sessionId!==session.sessionId)return;
+      // Only a successful adoption receipt may replace the stale-chat warning.
+      if(action==='adopt' && result.data?.adopted === true && validReview(result.data.review)) {
+        adoptedRevision = {sessionId:session.sessionId,conversationId:conversation.id,identity:decisionIdentity(result.data.review)};
+      }
       await refresh(true);
       if(action==='adopt') {activeConversationId=undefined;displayedConversation=undefined;selectedIndex=conversation.index;update();await openChange(conversation.index);}
     } finally {conversationBusy=false;update();}
@@ -477,10 +481,8 @@ function activate(context) {
   }));
   commandCenter = createCommandCenter(vscode, context, { getState: liveState, sendTerminal: body => { if(!selected || !connected || !matchesWorkspace(selected) || !vscode.workspace.isTrusted)throw new Error('Reconnect to the trusted Pi workspace.'); return request({...selected},'POST','/terminal',body); }, openNative: (snapshot,index) => openSnapshot(snapshot,index,{native:true}), showError });
   register('pair.review', openReview);
-  register('pair.askAction', input => openActionConversation({...typeof input==='number'?{index:input}:input,mode:'ask'}));
-  register('pair.adjustAction', input => openActionConversation({...typeof input==='number'?{index:input}:input,mode:'adjust'}));
-  register('pair.askSelection', () => openActionConversation({...selectionTarget(),mode:'ask'}));
-  register('pair.adjustSelection', () => openActionConversation({...selectionTarget(),mode:'adjust'}));
+  register('pair.chatAction', input => openActionConversation(input));
+  register('pair.chatSelection', () => openActionConversation(selectionTarget()));
   register('pair.openChange', openChange);
   register('pair.openCommandSource', () => commandCenter.openSource());
   register('pair.nextFile', () => openChange(review ? (selectedIndex + 1) % review.changes.length : 0));

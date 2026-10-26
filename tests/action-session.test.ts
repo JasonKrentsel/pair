@@ -71,7 +71,7 @@ test("invalid, out-of-scope and truncated model revisions fail closed and do not
     fauxAssistantMessage('{"text":"Cut off"', { stopReason: "length" }),
     (context) => { retryContext = flattened(context); return fauxAssistantMessage("Use a local string expression."); },
   ]);
-  await assert.rejects(session.ask("malformed attempt", { mode: "revise" }), /usable revision/);
+  await assert.rejects(session.ask("malformed attempt", { mode: "revise" }), /usable reply/);
   await assert.rejects(session.ask("unexpected path attempt", { mode: "revise" }), /only the scoped replacement/);
   await assert.rejects(session.ask("whole file attempt", { mode: "revise" }), /whole file instead of the selected lines/);
   await assert.rejects(session.ask("truncated attempt", { mode: "revise" }), /did not finish/);
@@ -114,4 +114,27 @@ test("quick forks reject invalid scopes and bound repeated turns without new mod
   await assert.rejects(session.ask("Ninth", { mode: "question" }), /eight turns/);
   assert.equal(f.faux.state.callCount, 8); session.dispose();
   assert.match(ACTION_SESSION_CONTRACT, /No extra keys/);
+});
+
+test("one chat naturally answers then suggests a requested revision while streaming only readable text", async () => {
+  const f = await fixture(), original = JSON.stringify(f.parent.getEntries()), requests: TranscriptContext[] = [];
+  const answer = 'The `name` value stays a string.\n\nIt can contain "quotes", a backslash \\, and Unicode 😀.';
+  const replacement = '  return `Hello ${name.trim()}`;';
+  f.faux.setResponses([
+    context => { requests.push(structuredClone(context)); return fauxAssistantMessage(JSON.stringify({ text: answer }).replace('😀', '\\ud83d\\ude00')); },
+    context => { requests.push(structuredClone(context)); return fauxAssistantMessage(JSON.stringify({ text: 'Trim only the selected expression.', candidate: { content: replacement, summary: 'Trim the name without changing the signature.' } })); },
+  ]);
+  const session = f.create(), questionUpdates: string[] = [], revisionUpdates: string[] = [];
+  const explanation = await session.ask('What does this do, and why is the public signature unchanged?', { mode: 'chat', onUpdate: value => questionUpdates.push(value) });
+  assert.equal(explanation.text, answer); assert.equal(explanation.candidate, undefined);
+  assert.ok(questionUpdates.length > 1, 'unified questions still stream through the real provider');
+  assert.ok(questionUpdates.every(value => answer.startsWith(value)), 'only decoded Markdown prefixes reach the UI');
+  const revision = await session.ask('Please trim the name in those lines, keeping the same protocol.', { mode: 'chat', onUpdate: value => revisionUpdates.push(value) });
+  assert.equal(revision.candidate?.content, replacement);
+  assert.ok(revisionUpdates.every(value => revision.text.startsWith(value)));
+  assert.ok(revisionUpdates.every(value => !value.includes(replacement) && !value.includes('candidate')));
+  assert.deepEqual(requests[1].messages.slice(0, requests[0].messages.length), requests[0].messages, 'the child request prefix stays stable');
+  assert.match(JSON.stringify(requests[0]), /Questions, requests for explanation/);
+  assert.doesNotMatch(JSON.stringify(requests[1]), /Mode: chat|Mode: revise|Mode: question/);
+  assert.equal(JSON.stringify(f.parent.getEntries()), original); session.dispose();
 });

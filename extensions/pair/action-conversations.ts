@@ -95,34 +95,37 @@ export class ActionConversations {
     }
     if (body.action !== "send") throw new Error("Unknown action conversation request.");
     if (typeof body.requestId !== "string" || body.requestId.length > 100 || !body.requestId) throw new Error("Include a message request ID.");
-    if (typeof body.text !== "string" || !body.text.trim() || body.text.length > 3000 || !["ask", "adjust"].includes(body.mode)) throw new Error("Ask a question or describe a small adjustment in up to 3,000 characters.");
+    const mode = body.mode ?? "chat";
+    if (typeof body.text !== "string" || !body.text.trim() || body.text.length > 3000 || !["chat", "ask", "adjust"].includes(mode)) throw new Error("Send a message about this action in up to 3,000 characters.");
     const duplicate = record.requests?.get(body.requestId);
     if (duplicate) {
-      if (duplicate.text !== body.text || duplicate.mode !== body.mode) throw new Error("That message ID was used for different text.");
+      if (duplicate.text !== body.text || duplicate.mode !== mode) throw new Error("That message ID was used for different text.");
       return { accepted: true, conversationId: view.id };
     }
     if (view.status === "running") throw new Error("Wait for the current reply, or stop it first.");
     if (view.messages.length >= 16) throw new Error("This focused conversation has reached eight turns. Request a new step to continue.");
     const change = review.changes[view.index];
+    // Opening/reopening Chat stores only UI metadata. Capture the parent branch,
+    // prompt and current model exactly once, after the first valid Send.
     record.session ??= (this.options.factory ?? createActionSession)(this.options.ctx, this.options.toolCallId, {
       index: view.index, label: change.label, kind: change.kind, before: change.before, proposed: change.after ?? change.command!,
       startLine: view.startLine, endLine: view.endLine, why: change.why, stepTitle: review.title, stepContext: otherActionContext(review, view.index),
     });
-    record.request = { id: body.requestId, text: body.text, mode: body.mode };
-    (record.requests ??= new Map()).set(body.requestId,{text:body.text,mode:body.mode});
+    record.request = { id: body.requestId, text: body.text, mode };
+    (record.requests ??= new Map()).set(body.requestId,{text:body.text,mode});
     const abort = new AbortController(); record.abort = abort;
     view.status = "running"; view.error = undefined;
-    if (body.mode === "adjust") { view.candidate = undefined; record.candidatePrepared = undefined; record.content = undefined; }
+    if (mode === "adjust") { view.candidate = undefined; record.candidatePrepared = undefined; record.content = undefined; }
     view.messages.push({role:"user",text:body.text.trim()},{role:"assistant",text:""});
     const reply = view.messages.at(-1)!;
     this.touch();
     void (async () => {
       try {
-        const result = await record.session!.ask(body.text.trim(), { mode: body.mode === "ask" ? "question" : "revise", signal: abort.signal,
+        const result = await record.session!.ask(body.text.trim(), { mode: mode === "chat" ? "chat" : mode === "ask" ? "question" : "revise", signal: abort.signal,
           onUpdate: text => { if (!abort.signal.aborted && !this.closed && record.abort === abort) { reply.text = text.slice(-24000); this.touch(); } } });
         this.current(body); abort.signal.throwIfAborted();
         reply.text = result.text.slice(0,24000);
-        if (result.candidate && body.mode === "adjust") {
+        if (result.candidate && mode !== "ask") {
           const summary = result.candidate.summary.trim().slice(0,1600);
           const next = await buildActionRevision(this.options.root, this.options.getPrepared(), view.index, result.candidate.content, summary, view.startLine ? {startLine:view.startLine,endLine:view.endLine!} : undefined, abort.signal);
           this.current(body); abort.signal.throwIfAborted();

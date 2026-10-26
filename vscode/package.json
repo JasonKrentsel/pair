@@ -2,7 +2,7 @@
   "name": "pi-pair",
   "displayName": "Pair for Pi",
   "description": "Review exact Pi proposals and approve steps inside your project in VS Code.",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "publisher": "local-pair",
   "license": "UNLICENSED",
   "engines": {
@@ -113,26 +113,14 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "pair.askAction",
-        "title": "Ask About Current Action",
+        "command": "pair.chatAction",
+        "title": "Chat About Current Action",
         "category": "Pair",
         "enablement": "pair.canDiscuss"
       },
       {
-        "command": "pair.adjustAction",
-        "title": "Adjust Current Action",
-        "category": "Pair",
-        "enablement": "pair.canDiscuss"
-      },
-      {
-        "command": "pair.askSelection",
-        "title": "Ask About Selected Lines",
-        "category": "Pair",
-        "enablement": "pair.canDiscuss"
-      },
-      {
-        "command": "pair.adjustSelection",
-        "title": "Adjust Selected Lines",
+        "command": "pair.chatSelection",
+        "title": "Chat About Selected Lines",
         "category": "Pair",
         "enablement": "pair.canDiscuss"
       }
@@ -179,14 +167,9 @@
       ],
       "editor/context": [
         {
-          "command": "pair.askSelection",
+          "command": "pair.chatSelection",
           "when": "resourceScheme == pair-review && resourcePath =~ /\\/(proposed|command)\\// && pair.canDiscuss",
           "group": "pair@1"
-        },
-        {
-          "command": "pair.adjustSelection",
-          "when": "resourceScheme == pair-review && resourcePath =~ /\\/(proposed|command)\\// && pair.canDiscuss",
-          "group": "pair@2"
         }
       ]
     },

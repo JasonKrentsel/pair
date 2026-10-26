@@ -1,17 +1,17 @@
 # Pair for Pi
 
-Pair 0.10.0 keeps the current step in one sidebar: an ordered list of actions, their explanations, and an approval footer that stays visible while the content scrolls. Native diffs and the command terminal open in the center editor. The extension preserves your sidebar position, including a right-side layout.
+Pair 0.10.1 keeps the current step in one sidebar: an ordered list of actions, their explanations, and an approval footer that stays visible while the content scrolls. Native diffs and the command terminal open in the center editor. The extension preserves your sidebar position, including a right-side layout.
 
 ## Use
 
-1. Install this companion and reload Pair 0.10.0 in Pi when idle.
+1. Install this companion and reload Pair 0.10.1 in Pi when idle.
 2. Open the same project folder in Pi and VS Code. One matching session connects automatically. Use **Pair: Select Pi Session** if several sessions share the folder.
 3. Select an action to open its native diff or command terminal. Expand **Why this action** for its rationale and any section notes. Use **Next Action in Step** / **Previous Action in Step** to navigate from the editor.
 4. Choose **Approve step**, **Deny**, or **Deny with note**. Approval covers all listed actions in order, once. A failed or interrupted action stops the remaining actions.
 
 Completed and denied steps keep their diffs and output available without disabled approval buttons. Running steps show progress in the center editor. `pair.openReviewAutomatically` controls automatic focus for new steps; opening a review explicitly from Pi still focuses it.
 
-Use **Ask** or **Adjust** beside an action to open its focused conversation in this same sidebar. Select proposed lines in the native diff and use **Pair: Ask About Selected Lines** or **Pair: Adjust Selected Lines** for a smaller scope. A question keeps the step pending. Adjust suggests a candidate; **Inspect diff** opens a native proposed-versus-revised comparison. **Use revision** updates that part only and returns to step approval. **Back to step** preserves the conversation and draft. Review Desk, checkpoints and pinned constraints remain removed. Existing historical records remain readable but cannot restore execution permission.
+Use **Chat** beside an action to open its focused conversation in this same sidebar. Select proposed lines in the native diff and use **Pair: Chat About Selected Lines** for a smaller scope. The single composer accepts questions and small revision requests. Opening and drafting start no fork or model request; the first Send starts the child conversation. A question keeps the step pending. A requested revision can produce a candidate; **Inspect diff** opens a native proposed-versus-revised comparison. **Use revision** updates that part only and returns to step approval. **Back to step** preserves the conversation and draft. Review Desk, checkpoints and pinned constraints remain removed. Existing historical records remain readable but cannot restore execution permission.
 
 ## Commands and highlighting
 
@@ -27,7 +27,7 @@ Pi owns execution. The companion submits a decision for an exact session, revisi
 
 Unsaved target files and changed review snapshots block approval. Decisions require a trusted matching workspace. A disconnected or historical step cannot be approved. A denial does not undo earlier completed steps, and a partially executed step is not rolled back automatically.
 
-Expanding explanations, switching actions, scrolling diffs, polling and streaming output remain local UI operations. They do not invoke a model or append UI state to its context. The instruction contract stays stable across unchanged turns. Sending an action question or adjustment uses the current Pi model in a separate in-memory fork with no tools. The main prompt and pending session stay unchanged. Child turns reuse their own stable prefix, although provider cache sharing with the main request is not guaranteed. Only adopted changes and actual outcomes enter the parent result. Fork chats last for the pending review and are not persisted across restart.
+Expanding explanations, switching actions, scrolling diffs, polling and streaming output remain local UI operations. They do not invoke a model or append UI state to its context. The instruction contract stays stable across unchanged turns. Sending a chat message uses the current Pi model in a separate in-memory fork with no tools. The main prompt and pending session stay unchanged. Child turns reuse their own stable prefix, although provider cache sharing with the main request is not guaranteed. Only adopted changes and actual outcomes enter the parent result. Fork chats last for the pending review and are not persisted across restart.
 
 This companion supports local desktop workspaces; remote SSH, WSL, containers and browser-hosted VS Code are unsupported.
 

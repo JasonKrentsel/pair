@@ -1,6 +1,6 @@
 {
   "name": "pi-pair",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "private": true,
   "description": "Collaborative design and incremental implementation for Pi",
   "type": "module",

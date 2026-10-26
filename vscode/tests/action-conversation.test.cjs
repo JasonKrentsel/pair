@@ -20,7 +20,7 @@ function browser(options=base(),saved={}) {
    appendChild(child){child.parent=this;this.children.push(child);},remove(){this.parent.children.splice(this.parent.children.indexOf(this),1);},requestSubmit(){this.handlers.submit({preventDefault(){}});}};
   elements.set(name,e);return e;
  }
- for(const name of ['conversation-state','transcript','messages','message','composer','send','stop','warning','conversation-status','candidate','latest','mode-help','empty'])element(name);
+ for(const name of ['conversation-state','transcript','messages','message','composer','send','stop','warning','conversation-status','candidate','latest','chat-help','empty'])element(name);
  elements.get('conversation-state').textContent=initial;
  let checkedMode=options.mode || 'ask';
  const radios=['ask','adjust'].map(value=>{const radio=Object.assign(element(value),{value});Object.defineProperty(radio,'checked',{get:()=>checkedMode===value,set:checked=>{if(checked)checkedMode=value;}});return radio;});
@@ -41,7 +41,7 @@ test('focused conversation safely renders Markdown, code and source context',()=
  const options=base();options.conversation.messages=[{role:'assistant',text:'</script><iframe src=x>'}];
  options.conversation.scope.excerpt='<script>alert(1)</script>';
  const page=renderActionConversation(options);
- assert.doesNotMatch(page,/<iframe|<script>alert/);assert.match(page,/Lines 3–8/);assert.match(page,/Message to Pi/);
+ assert.doesNotMatch(page,/<iframe|<script>alert/);assert.match(page,/Lines 3–8/);assert.match(page,/for="message">Message/);assert.match(page,/The chat starts when you send your first message/);
  assert.match(page,/font:var\(--vscode-font-size\)/);assert.match(page,/\.composer-area\{flex:none/);
  assert.doesNotMatch(page,/data-action="approve"|Review Desk|Checkpoint/);
 });
@@ -57,6 +57,22 @@ test('revisions can be inspected and adopted only under the current pending iden
  }
  assert.equal(actionConversationUpdate({...options,connected:false}).canSend,false);
  assert.equal(actionConversationUpdate({...options,trusted:false}).canSend,false);
+});
+
+test('only an exact adoption receipt confirms that a revised step still awaits approval',()=>{
+ const options=base();options.conversation.status='closed';
+ options.review={...options.review,revision:2,gate:3,fingerprint:'revised'};
+ options.adoptedRevision={conversationId:options.conversation.id,identity:{reviewId:options.review.id,revision:2,gate:3,fingerprint:'revised'}};
+ const patch=actionConversationUpdate(options);
+ assert.equal(patch.status,'Revision added to step · Awaiting approval');assert.equal(patch.warning,'');assert.equal(patch.canSend,false);
+ for(const other of [
+  {...options,adoptedRevision:undefined},
+  {...options,adoptedRevision:{...options.adoptedRevision,conversationId:'another-chat'}},
+  ...[{revision:3},{fingerprint:'another-snapshot'},{gate:4},{pending:false}].map(change=>({...options,review:{...options.review,...change}})),
+ ]) {
+  const stale=actionConversationUpdate(other);
+  assert.equal(stale.status,'Earlier conversation');assert.match(stale.warning,/step changed or finished/);assert.equal(stale.canSend,false);
+ }
 });
 
 test('stream patches preserve drafts, unchanged messages, manual scroll and other webview state',()=>{
@@ -75,7 +91,7 @@ test('stream patches preserve drafts, unchanged messages, manual scroll and othe
 test('failed sends retain the draft and retry id; acknowledgement never erases new typing',()=>{
  const options=base(),b=browser(options);
  b.e('message').value='Explain this function';b.submit();
- const first=b.posted.at(-1);assert.equal(first.action,'conversation-send');assert.equal(first.mode,'ask');
+ const first=b.posted.at(-1);assert.equal(first.action,'conversation-send');assert.equal(first.mode,'chat');
  assert.equal(b.e('send').disabled,true);
  b.patch({type:'action-conversation-error',id:options.conversation.id,text:'Connection interrupted'});
  assert.equal(b.e('message').value,'Explain this function');assert.equal(b.e('send').disabled,false);
@@ -89,16 +105,19 @@ test('failed sends retain the draft and retry id; acknowledgement never erases n
 });
 
 test('Enter submits while Shift+Enter and IME composition remain normal editing',()=>{
- const b=browser({...base(),mode:'adjust'});b.e('message').value='Keep the protocol; simplify the implementation.';
+ const b=browser(base());b.e('message').value='Keep the protocol; simplify the implementation.';
  const key=(extras={})=>b.e('message').handlers.keydown({key:'Enter',preventDefault(){},...extras});
  key({shiftKey:true});key({isComposing:true});assert.equal(b.posted.filter(p=>p.action==='conversation-send').length,0);
- key();assert.equal(b.posted.at(-1).mode,'adjust');assert.equal(b.posted.at(-1).identity.gate,2);
+ key();assert.equal(b.posted.at(-1).mode,'chat');assert.equal(b.posted.at(-1).identity.gate,2);
 });
 
-test('resume restores Ask or Adjust mode but explicit intent overrides the saved mode',()=>{
+test('chat restores drafts while obsolete mode preferences are ignored',()=>{
  const saved={conversationDrafts:{'conversation-1':{mode:'adjust',draft:'Simplify the body',following:true}}};
- const resumed=browser(base(),saved);resumed.submit();assert.equal(resumed.posted.at(-1).mode,'adjust');
- const explicit=browser({...base(),mode:'ask'},saved);explicit.submit();assert.equal(explicit.posted.at(-1).mode,'ask');
+ const resumed=browser(base(),saved);
+ assert.equal(resumed.e('message').value,'Simplify the body');assert.equal(resumed.e('send').textContent,'Send');
+ assert.doesNotMatch(resumed.html,/name="mode"|Request revision|Message purpose/);
+ resumed.submit();assert.equal(resumed.posted.at(-1).mode,'chat');
+ assert.equal(resumed.saved.conversationDrafts['conversation-1'].mode,undefined);
 });
 
 test('backend top-level line scope appears with exact selected code and a consistent message limit',()=>{
@@ -121,10 +140,27 @@ test('empty running assistant response has a useful waiting label that becomes s
  assert.doesNotMatch(actionConversationUpdate(options).messages[1].html,/Preparing a response/);
 });
 
-test('composer examples describe commands while file conversations retain function examples',()=>{
+test('one composer handles questions and changes with contextual examples',()=>{
  const options=base();options.review.changes=[{kind:'powershell',command:'Get-Content README.md'}];
- assert.equal(browser(options).e('message').placeholder,'What does this command do…');
- assert.equal(browser({...options,mode:'adjust'}).e('message').placeholder,'Describe a focused change to this command…');
- assert.equal(browser(base()).e('message').placeholder,'Why does this function use this approach…');
- assert.equal(browser({...base(),mode:'adjust'}).e('message').placeholder,'Keep the protocol; simplify this function…');
+ assert.equal(browser(options).e('message').placeholder,'Ask about this command or suggest a change…');
+ assert.equal(browser(base()).e('message').placeholder,'Ask about this code or suggest a change…');
+ const b=browser(base());assert.equal(b.posted.filter(message=>message.action==='conversation-send').length,0);
+ assert.equal(b.e('send').disabled,true);b.e('message').value='  ';b.e('message').handlers.input();assert.equal(b.e('send').disabled,true);
+ b.e('message').value='Why this approach?';b.e('message').handlers.input();assert.equal(b.e('send').disabled,false);assert.equal(b.posted.filter(message=>message.action==='conversation-send').length,0);
+ assert.equal(b.e('conversation-status').textContent,'Ready to chat');assert.equal(b.e('send').textContent,'Send');assert.equal(b.e('message').focused,true);
+ b.e('message').focused=false;b.patch(actionConversationUpdate(base()));assert.equal(b.e('message').focused,false,'polling must not take focus back');
+});
+
+test('initial busy-to-ready transition focuses once unless the human has navigated away',()=>{
+ const options=base(),ready=actionConversationUpdate(options),b=browser({...options,busy:true});
+ assert.equal(b.e('message').focused,undefined);b.patch(ready);assert.equal(b.e('message').focused,true);
+ b.e('message').focused=false;b.patch(ready);assert.equal(b.e('message').focused,false);
+ for(const event of ['pointerdown','keydown','window:blur']){
+   const moved=browser({...options,busy:true});moved.events[event]({});moved.patch(ready);
+   assert.equal(moved.e('message').focused,undefined,event+' must cancel deferred focus');
+ }
+ const running=browser({...options,conversation:{...options.conversation,status:'running'}});running.patch(ready);
+ assert.equal(running.e('message').focused,undefined,'finishing a response is not a new input intent');
+ const disconnected=browser({...options,connected:false});disconnected.patch(ready);
+ assert.equal(disconnected.e('message').focused,undefined,'reconnecting must not steal focus');
 });

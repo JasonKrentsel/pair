@@ -46,7 +46,7 @@ function renderReviewPanel({ conversationAvailable = false, actionConversations 
         ${directory && directory !== '.' ? `<span class="directory">${escape(directory)}/</span>` : ''}
         <span class="action-meta"><span>${escape(kind)}</span>${command ? '' : `<span class="stats"><span class="added">+${change.added || 0}</span> <span class="removed">−${change.removed || 0}</span></span>`}${change.status ? `<span class="outcome">${escape(change.status)}</span>` : ''}</span></span><span class="open-icon" aria-hidden="true">↗</span>
       </button>
-      ${review.pending && conversationAvailable ? `<div class="discuss-actions"><button class="discuss" data-action="ask-action" data-index="${index}"${conversationAttribute}>${conversation ? 'Conversation' : 'Ask'}</button><button class="discuss" data-action="adjust-action" data-index="${index}"${conversationAttribute}>Adjust</button></div>` : ''}
+      ${review.pending && conversationAvailable ? `<div class="discuss-actions"><button class="discuss" data-action="chat-action" data-index="${index}"${conversationAttribute} aria-label="${escape((conversation ? 'Continue chat about ' : 'Chat about ') + title)}">Chat</button></div>` : ''}
       ${why || annotationMarkup ? `<details class="action-details" data-detail="${index}"${selected ? ' open' : ''}><summary>Why this action</summary><div class="prose">${why ? markdown(change.why) : ''}${annotationMarkup}</div></details>` : ''}
     </li>`;
   }).join('');

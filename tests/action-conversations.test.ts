@@ -16,7 +16,7 @@ async function until<T>(read: () => T | Promise<T>, label: string): Promise<NonN
 const identity = (review: BridgeReview) => ({ reviewId: review.id, revision: review.revision, fingerprint: review.fingerprint, gate: review.gate });
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(accept => { resolve = accept; }); return { promise, resolve }; }
 
-async function fixture(respond: (text: string, options: Parameters<ActionSession["ask"]>[1], scope: ActionScope) => Promise<ActionSessionResult>, onUpdate?: (value: any) => void) {
+async function fixture(respond: (text: string, options: Parameters<ActionSession["ask"]>[1], scope: ActionScope) => Promise<ActionSessionResult>, onUpdate?: (value: any) => void, onCreate?: (ctx: any) => void) {
   const root = mkdtempSync(join(tmpdir(), "pair-action-conversations-")), registryDir = join(root, "registry");
   const bridge = new PairReviewBridge({ registryDir }); await bridge.start(root);
   const registry = JSON.parse(readFileSync(join(registryDir, readdirSync(registryDir)[0]), "utf8"));
@@ -26,6 +26,7 @@ async function fixture(respond: (text: string, options: Parameters<ActionSession
   const pi: any = { on() {}, registerTool(tool: any) { tools.set(tool.name, tool); }, appendEntry(customType: string, data: any) { entries.push({ customType, data }); } };
   const controller = registerStepPermissions(pi, { active: () => ({ root }), changed() {}, bridge,
     actionSessionFactory: (_ctx, toolCallId, scope) => {
+      onCreate?.(_ctx);
       const child = { toolCallId, scope, disposed: false, calls: [] as string[] }; children.push(child);
       return { ask: async (text, options) => { child.calls.push(text); return respond(text, options, scope); }, dispose() { child.disposed = true; } };
     },
@@ -66,7 +67,7 @@ async function fixture(respond: (text: string, options: Parameters<ActionSession
     const id = identity(bridge.current!); const response = await post("/conversation", { ...id, action: "open", index, ...scope }); assert.equal(response.status, 200, JSON.stringify(response.body));
     return { ...id, index, conversationId: response.body.conversationId };
   };
-  return { root, original, bridge, post, state, open, children, executions, opened, abort, entries, get settled() { return settled; },
+  return { root, original, bridge, post, state, open, children, executions, opened, abort, entries, ctx, get settled() { return settled; },
     async result() { await running; if (error) throw error; return result; },
     async close() { abort.abort(); await bridge.close(); await running; rmSync(root, { recursive: true, force: true }); },
   };
@@ -97,6 +98,35 @@ test("asking while parent awaits permission is streamed and idempotent without c
     assert.equal((await f.post("/decision", { ...identity(before), action: "deny" })).status, 200);
     await f.result(); assert.equal(f.children[0].disposed, true); assert.equal(f.executions.length, 0);
   } finally { answer.resolve({ text: "Done" }); await f.close(); }
+});
+
+test("Chat stays lazy until a valid Send and one fork handles explanations, revisions and follow-up questions", async () => {
+  let branchReads = 0, promptReads = 0, providerCalls = 0;
+  const f = await fixture(async (text, options) => {
+    providerCalls++; assert.equal(options.mode, 'chat');
+    return text.startsWith('Change') ? { text: 'Revise the internal return only.', candidate: { content: "  return 'revised';", summary: 'Keep the protocol and revise the internal return.' } }
+      : { text: 'The protocol stays unchanged. Nothing has run.' };
+  }, undefined, ctx => { ctx.sessionManager.getBranch(); ctx.getSystemPrompt(); });
+  f.ctx.sessionManager.getBranch = () => { branchReads++; return []; };
+  f.ctx.getSystemPrompt = () => { promptReads++; return 'Current effective parent prompt'; };
+  try {
+    const before = f.bridge.current!, thread = await f.open(2, { startLine: 3, endLine: 3 });
+    assert.deepEqual(await f.open(2, { startLine: 3, endLine: 3 }), thread);
+    await f.state(); await f.open(1);
+    assert.equal(f.children.length, 0); assert.equal(branchReads, 0); assert.equal(promptReads, 0); assert.equal(providerCalls, 0);
+    assert.equal((await f.post('/conversation', { ...thread, action: 'send', mode: 'chat', text: '  ', requestId: 'blank' })).status, 409);
+    assert.equal(f.children.length, 0); assert.equal(branchReads, 0); assert.equal(promptReads, 0);
+    const send = async (text: string, requestId: string) => {
+      assert.equal((await f.post('/conversation', { ...thread, action: 'send', mode: 'chat', text, requestId })).status, 200);
+      return until(async () => { const view = (await f.state()).actionConversations.find((item: any) => item.id === thread.conversationId); return view.status === 'ready' && view; }, 'chat reply');
+    };
+    assert.equal((await send('Why does this preserve the protocol?', 'why')).candidate, undefined);
+    const candidate = (await send('Change only the return value.', 'change')).candidate;
+    assert.ok(candidate); assert.equal((await send('Why is that better?', 'follow-up')).candidate.id, candidate.id);
+    assert.equal(f.children.length, 1); assert.equal(branchReads, 1); assert.equal(promptReads, 1); assert.equal(providerCalls, 3);
+    assert.deepEqual(f.bridge.current, before); assert.equal(f.executions.length, 0); assert.equal(f.settled, false);
+    await f.post('/decision', { ...identity(before), action: 'deny' }); await f.result();
+  } finally { await f.close(); }
 });
 
 test("using one selected-line revision updates the still-blocked step and rejects stale approvals", async () => {

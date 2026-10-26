@@ -46,3 +46,12 @@ test('changing selected actions expands their own rationale instead of restoring
  vm.runInNewContext(script,{acquireVsCodeApi:()=>api,document:{querySelector:()=>main,querySelectorAll:s=>s==='[data-detail]'?details:[]}});
  assert.equal(details[0].open,false);assert.equal(details[1].open,true);assert.equal(main.scrollTop,140);
 });
+
+test('each pending action has one Chat entry and never separate question or revision modes',()=>{
+ const review=step();const html=renderReviewPanel({...options(review),conversationAvailable:true});
+ assert.equal((html.match(/data-action="chat-action"/g)||[]).length,2);
+ assert.doesNotMatch(html,/data-action="ask-action"|data-action="adjust-action"|>Adjust<|>Ask</);
+ const conversation={id:'c1',reviewId:review.id,revision:review.revision,fingerprint:review.fingerprint,gate:review.gate,index:0,status:'ready',messages:[]};
+ const resumed=renderReviewPanel({...options(review),conversationAvailable:true,actionConversations:[conversation]});
+ assert.match(resumed,/data-conversation-id="c1"/);assert.match(resumed,/Continue chat about orchestrator.md/);
+});
