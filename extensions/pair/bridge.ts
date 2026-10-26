@@ -50,6 +50,22 @@ function decisionFrom(value: unknown): BridgeDecision {
 
 /** Local transport only. The existing Pi permission gate still owns execution. */
 export class PairReviewBridge {
+  private conversations?: { readonly available: boolean; snapshot(): unknown[]; handle(body: unknown): Promise<unknown>; close(): void };
+  private readonly revisionListeners = new Set<() => void>();
+  setConversations(value: NonNullable<PairReviewBridge["conversations"]>) { this.conversations?.close(); this.conversations = value; this.sequence++; }
+  touchConversations() { this.sequence++; }
+  onPendingRevision(listener: () => void) { this.revisionListeners.add(listener); return () => { this.revisionListeners.delete(listener); }; }
+  revisePending(expected: {reviewId:string;revision:number;fingerprint:string;gate?:number}, changes:ChangePreview[], commit:()=>void): BridgeReview {
+    if (!this.review?.pending || expected.reviewId !== this.review.id || expected.revision !== this.review.revision || expected.fingerprint !== this.review.fingerprint || (expected.gate ?? 1) !== (this.review.gate ?? 1)) throw new Error("The step changed. Open the current action before using a revision.");
+    this.validate?.();
+    const snapshots = structuredClone(changes), revision = this.review.revision + 1;
+    const fingerprint = createHash("sha256").update(JSON.stringify({id:this.review.id,revision,changes:snapshots})).digest("hex");
+    commit();
+    this.review = freeze({...this.review,revision,fingerprint,gate:(this.review.gate ?? 1)+1,changes:snapshots,status:"Awaiting permission"});
+    this.sequence++;
+    for (const listener of this.revisionListeners) listener();
+    return this.current!;
+  }
   private readonly registryDir: string;
   private server?: Server;
   private registry?: BridgeRegistry;
@@ -155,6 +171,7 @@ export class PairReviewBridge {
     const fingerprint = createHash("sha256").update(JSON.stringify({ id, revision, ...snapshots })).digest("hex");
     const next = { id, revision, fingerprint, gate: 1, ...snapshots, pending: true, status: "Awaiting permission" };
     this.cancel();
+    this.conversations?.close(); this.conversations = undefined;
     this.gate++;
     this.review = freeze(next);
     this.focus = undefined;
@@ -215,6 +232,7 @@ export class PairReviewBridge {
     const decision = decisionFrom(value);
     if (!this.review?.pending) return false;
     if (decision.action === "approve") this.validate?.();
+    this.conversations?.close();
     const callback = this.onDecision;
     this.onDecision = undefined;
     this.validate = undefined;
@@ -240,6 +258,7 @@ export class PairReviewBridge {
 
   private async stop(): Promise<void> {
     this.cancel();
+    this.conversations?.close(); this.conversations = undefined;
     const server = this.server;
     this.server = undefined;
     this.registry = undefined;
@@ -277,9 +296,9 @@ export class PairReviewBridge {
       if (request.headers["if-none-match"] === etag) return this.send(response, 304);
       const review = this.current;
       const summary = review && { id: review.id, revision: review.revision, fingerprint: review.fingerprint, gate: review.gate, title: review.title, why: review.why, status: review.status, pending: review.pending };
-      return this.send(response, 200, { version: 1, sessionId: registry.sessionId, root: registry.root, review: (path === "/status" ? summary : review) ?? null, progress: this.progress, terminal: this.terminalState ?? null, ...(this.focus ? { focus: this.focus } : {}) });
+      return this.send(response, 200, { version: 1, sessionId: registry.sessionId, root: registry.root, review: (path === "/status" ? summary : review) ?? null, actionConversations: this.conversations?.snapshot() ?? [], conversationAvailable: this.conversations?.available ?? false, progress: this.progress, terminal: this.terminalState ?? null, ...(this.focus ? { focus: this.focus } : {}) });
     }
-    if (!["/decision", "/terminal"].includes(path ?? "")) { request.resume(); return this.send(response, 404, { error: "Unknown Pair review endpoint." }); }
+    if (!["/decision", "/terminal", "/conversation"].includes(path ?? "")) { request.resume(); return this.send(response, 404, { error: "Unknown Pair review endpoint." }); }
     if (request.method !== "POST") { request.resume(); return this.send(response, 405, { error: "Use POST for a review decision." }); }
     if (!/^application\/json(?:\s*;|$)/i.test(request.headers["content-type"] ?? "")) {
       request.resume();
@@ -296,6 +315,13 @@ export class PairReviewBridge {
       }
       // A session may have closed while the request body was arriving.
       if (this.registry !== registry) return this.send(response, 409, { error: "The Pi session changed. Reconnect before responding." });
+      if (path === "/conversation") {
+        try {
+          if (!this.conversations || !this.review?.pending) throw new Error("Open a pending step before asking about an action.");
+          const result = await this.conversations.handle(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+          return this.send(response, 200, result);
+        } catch(error) { return this.send(response,409,{error:String(error instanceof Error ? error.message : error).slice(0,700)}); }
+      }
       if (path === "/terminal") {
         try{this.terminalAction(JSON.parse(Buffer.concat(chunks).toString("utf8")));return this.send(response,200,{ok:true});}
         catch(error){return this.send(response,409,{error:(error as Error).message});}

@@ -1,4 +1,5 @@
 import { type AgentToolResult, type ExtensionAPI, type ExtensionContext, type ToolCallEvent } from "@earendil-works/pi-coding-agent";
+import { ActionConversations, type ActionSessionFactory } from "./action-conversations.ts";
 import { registerInteractiveTerminal } from "./interactive-terminal.ts";
 import { outputTail } from "./command-output.ts";
 import { Type } from "typebox";
@@ -55,6 +56,7 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
   review?: typeof showPermission;
   openExternal?: typeof openCodeDiff;
   bridge?: PairReviewBridge;
+  actionSessionFactory?: ActionSessionFactory;
 }) {
   // Injected terminal-only tests do not create a user-profile discovery server.
   const bridge = options.bridge ?? (options.review ? undefined : new PairReviewBridge());
@@ -144,16 +146,17 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
       for (const change of inputs) {
         if (!ctx.tools.some((entry) => entry.name === change.tool)) throw new Error(`The ${change.tool} tool is unavailable.`);
       }
-      const prepared = await prepareChanges(root, inputs, signal);
+      let prepared = await prepareChanges(root, inputs, signal);
       if (requestGeneration !== generation) throw new Error("The session changed while preparing the preview. Nothing was published or executed.");
-      const fingerprint = canonical(prepared.map((change) => ({ tool: change.tool, input: change.input })));
+      let fingerprint = canonical(prepared.map((change) => ({ tool: change.tool, input: change.input })));
       if (rejected.has(fingerprint)) throw new Error("This exact step was denied. Incorporate the note into a different change or ask a clarification question; do not repeat the same permission request.");
-      const previews = prepared.map((change) => change.preview);
+      let previews = prepared.map((change) => change.preview);
       const details: StepDetails = { title: params.title.trim(), why: params.why.trim(), status: "Awaiting permission", changes: previews };
       if (!details.title || !details.why) throw new Error("Explain the change and why it is needed.");
       // Keep the rationale in the dialog while pending instead of duplicating it behind the overlay.
       latest = details;
       update?.({ content: [{ type: "text", text: "Awaiting permission." }], details });
+      const adopted = new Map<number,string>();
       const decision = await reviewWithCompanion(bridge, root, ctx, details.title, details.why, previews, signal, {
         onOpenExternal: (selected) => external(ctx, previews, selected),
         onHandle: (handle) => { focusPending = () => { handle.setHidden(false); handle.focus(); }; },
@@ -164,7 +167,23 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
         options.active(ctx);
         assertUnchanged(root, prepared);
       }, options.review ?? showPermission, {
-        onPublished(review) { details.reviewId = review.id; },
+        onPublished(review) {
+          details.reviewId = review.id;
+          bridge?.setConversations(new ActionConversations({bridge,ctx,root,toolCallId:id,factory:options.actionSessionFactory,getPrepared:()=>prepared,
+            adopt(next,index,summary) {
+              const nextFingerprint=canonical(next.map(change=>({tool:change.tool,input:change.input})));
+              if(rejected.has(nextFingerprint))throw new Error("This exact step was already denied. Request a different revision.");
+              prepared=next; previews=next.map(change=>change.preview); details.changes=previews; fingerprint=nextFingerprint;
+              adopted.set(index,summary); latest=details;
+              // Rendering is advisory and must occur after the bridge commits its
+              // matching approval identity. A UI failure cannot split that transaction.
+              queueMicrotask(() => {
+                try { update?.({content:[{type:"text",text:"Revision ready. Awaiting permission."}],details}); }
+                catch { /* The companion still holds the exact updated proposal. */ }
+              });
+            },
+          }));
+        },
       });
       if (requestGeneration !== generation) throw new Error("The session changed while permission was open. Nothing was executed.");
       if (decision.action !== "approve" || signal?.aborted) {
@@ -261,7 +280,10 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
       return remember({
         isError: failed,
         terminate,
-        content: [{ type: "text", text: outputs.join("\n\n") + "\n\n" + (failed
+        content: [{ type: "text", text: outputs.join("\n\n") + (adopted.size ? "\n\nHuman-adjusted actions (the original tool arguments were superseded):\n" + [...adopted].map(([index,summary]) => {
+          const actual=completed[index]; const detail=actual.command ?? actual.diff ?? "";
+          return "Action " + (index+1) + ": " + summary.slice(0,500) + "\nOutcome: " + actual.status + "\n" + detail.slice(0,8000) + (detail.length>8000 ? "\n[Truncated; read the file for current contents.]" : "");
+        }).join("\n\n") : "") + "\n\n" + (failed
           ? "Remaining actions were not run. Completed and partial edits remain on disk; no rollback or automatic retry. Explain the per-file result and request fresh permission for any repair."
           : stopped ? "The native tool requested that execution stop. Remaining actions were not run; completed changes remain on disk."
           : "") }],

@@ -4,7 +4,7 @@ Pair adds an explanation and a permission decision to the next coherent step. Re
 
 ## Current status
 
-Version 0.9.0 simplifies the VS Code companion to one right-sidebar review: ordered actions, expandable explanations, and approval controls fixed below the scrolling content. Diffs and the interactive command terminal use the center editor. Checkpoints, pinned constraints, Review Desk, and inline Q&A have been removed from Pi and VS Code. Use chat for discussion and **Deny with note** when a proposed step should change.
+Version 0.10.0 adds focused action conversations in the right sidebar. Ask about one file, command, or selected proposed lines while Pi waits for approval. Adjust creates a candidate; inspect it in the center editor, then choose **Use revision** to replace only that part of the pending step. Nothing runs until the updated whole step is approved. Review Desk, checkpoints and pinned constraints remain removed.
 
 ## Everyday use
 
@@ -40,7 +40,7 @@ The connection is authenticated and restricted to the local machine and matching
 
 ## Explanations and discussion
 
-Each action has a concise Markdown explanation. In VS Code, expand **Why this action** to read the rationale and optional section notes in the sidebar. Discuss questions in Pi chat; choose **Deny with note** when the proposed step should change. Navigation and expanded explanations remain local UI state and do not create model turns.
+Each action has a concise Markdown explanation. In VS Code, expand **Why this action** to read the rationale and optional section notes in the sidebar. Choose **Ask** or **Adjust** beside one action. For a function or smaller section, select its lines on the proposed side of the native diff and use **Pair: Ask About Selected Lines** or **Pair: Adjust Selected Lines** from the editor context menu. Ask leaves approval pending. Adjust produces a separate candidate; **Inspect diff** compares it with the original proposal. **Use revision** updates only the selected action or lines and requires fresh approval. **Back to step** keeps the conversation and unsent draft available. Navigation, draft text and expanded explanations remain local UI state and do not create model turns. Only Send invokes the current Pi model in a separate in-memory fork. It inherits completed conversation context, the current prompt and bounded pending-step context, with no execution tools. The main session stays blocked and unchanged. The fork has a stable prefix across its own turns; its first request is not guaranteed to reuse the main session's provider cache because its tool set differs. Fork conversations are ephemeral and limited to eight turns. Only accepted revisions and actual execution results enter the parent tool result; the chat transcript is not copied back. If context was clipped or a change needs a different protocol, the fork should ask for clarification.
 
 ## Group execution
 
@@ -88,6 +88,7 @@ Arguments, approvals, and results remain in local Pi history. Denial does not ro
 
 ## Source layout
 
+- extensions/pair/action-session.ts, action-conversations.ts and action-revisions.ts — read-only review forks, scoped candidate adoption and exact revision guards.
 - extensions/pair/permissions.ts — step requests, one-use permission, ordered execution, and denial feedback.
 - extensions/pair/changes.ts — native in-memory previews, snapshot checks, and change statistics.
 - extensions/pair/review-model.ts and diff-view.ts — structured hunks, syntax highlighting, line numbers, and unified/split rendering.
