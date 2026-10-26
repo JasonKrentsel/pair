@@ -146,12 +146,12 @@ export class ReviewComponent implements Component, Focusable {
     this.hits = []; this.editorY = -1; this.editorHeight = 0; this.searchY = -1;
     this.canApprove = false;
     if (width < 45 || available < 15) {
-      return [theme.fg("accent", "Pair review · resize to continue"), truncateToWidth(plain(this.options.title), width), "Use a larger terminal to inspect the change.", this.options.readOnly ? "Esc Close" : "d / Esc Deny"].slice(0, available).map((line) => truncateToWidth(line, width));
+      return [theme.fg("accent", "Pair review · resize to continue"), truncateToWidth(plain(this.options.title), width), "Use a larger terminal to inspect the step.", this.options.readOnly ? "Esc Close" : "d / Esc Deny"].slice(0, available).map((line) => truncateToWidth(line, width));
     }
     const totalAdded = changes.reduce((sum, item) => sum + item.added, 0);
     const totalRemoved = changes.reduce((sum, item) => sum + item.removed, 0);
     const scope = changes.every((item) => item.diff !== undefined) ? `${changes.length} ${changes.length === 1 ? "file" : "files"} · +${totalAdded} −${totalRemoved}` : resultOnly ? "Saved result" : "Command";
-    const lines: string[] = [theme.fg("accent", `${this.options.readOnly ? "Review" : "Review change"} · ${scope}`), ...wrapTextWithAnsi(theme.bold(plain(this.options.title)), inner)];
+    const lines: string[] = [theme.fg("accent", `${this.options.readOnly ? "Review" : "Review step"} · ${scope}`), ...wrapTextWithAnsi(theme.bold(plain(this.options.title)), inner)];
     const section = change.why || change.annotations?.length ? this.sectionWhy[this.selected].render(inner) : [];
     const whyLines = [...this.why.render(inner), ...(section.length ? ["", ...section] : [])];
     if (this.mode !== "why" && this.mode !== "help") {
@@ -188,7 +188,7 @@ export class ReviewComponent implements Component, Focusable {
       footer.push(theme.fg("muted", "↑/↓ Scroll · PgUp/PgDn Page"));
     } else {
       // Button hit regions are placed below after the viewport height is known.
-      footer.push(...wrapTextWithAnsi(theme.fg("accent", this.options.readOnly ? "[q] Close" : `[a] Approve ${file ? `change · ${changes.length} ${changes.length === 1 ? "file" : "files"}` : "command"}   [d] Deny   [n] Deny with note`), inner));
+      footer.push(...wrapTextWithAnsi(theme.fg("accent", this.options.readOnly ? "[q] Close" : `[a] Approve step · ${file ? `${changes.length} ${changes.length === 1 ? "file" : "files"}` : "command"}   [d] Deny   [n] Deny with note`), inner));
       footer.push(...wrapTextWithAnsi(theme.fg("muted", file ? `${changes.length > 1 ? "Tab Files · " : ""}[ / ] Changes · / Search${this.options.onOpenExternal ? " · v VS Code" : ""} · ? Help` : `↑/↓ Scroll · PgUp/PgDn Page · i Why · Esc ${this.options.readOnly ? "Close" : "Deny"}`), inner));
     }
     const room = available - lines.length - footer.length - input.length - 2;

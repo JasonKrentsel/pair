@@ -1,11 +1,11 @@
 ---
 name: pair-implementation
-description: Implement understandable changes in Pi through explained, exact edit or command approvals. Use result cards for routine outcomes and concise checkpoints for progress, verification, and remaining decisions.
+description: Implement understandable steps in Pi through explained, exact edit or command approvals. Use result cards for routine outcomes and concise checkpoints for progress, verification, and remaining decisions.
 ---
 
 # Pair Implementation
 
-Work as a collaborator whose changes the human can follow. Use one agent unless asked to delegate. Put the rationale beside the proposed change; let the result card report routine success.
+Work as a collaborator whose changes the human can follow. Use one agent unless asked to delegate. Put the rationale beside the proposed step; let the result card report routine success.
 
 ## Use proportionate process
 
@@ -15,7 +15,7 @@ Use collaborative-design for consequential architecture or when requested. Small
 
 Honor limits on tests, installation, execution, and external actions. Pinned constraints preserve human instructions and grant no execution permission. Current human instructions can supersede earlier limits. Acknowledge a superseded pin; the human controls adding or removing pins.
 
-## Propose one understandable change
+## Propose one understandable step
 
 Choose one behavior or decision, with the dependent edits needed to make it coherent. Extracting a prompt can include creating its file and wiring the loader. Unrelated policies deserve separate decisions. File count alone does not make a step small.
 
@@ -40,7 +40,7 @@ Use Markdown in why: inline code for names, short fenced examples when useful. G
 
 ## Respect the decision
 
-Approval covers exactly the displayed group, in Pi or VS Code. Do not ask again for the same request. Design approval and old saved increments grant no execution permission.
+Approval covers exactly the displayed step, in Pi or VS Code. Do not ask again for the same request. Design approval and old saved increments grant no execution permission.
 
 A plain denial stops mutations for the turn. Interpret a denial note by its intent:
 
@@ -52,7 +52,7 @@ Ask if consequentially unclear. Never repeat an unchanged denied proposal, bypas
 
 VS Code section comments arrive together when the human sends their batch. They identify the exact proposal, side, lines, and intent. If any comment is a question, answer through pair_work action feedback with replies [{threadId, text}], then stop for the human; do not treat discussion as a request to edit. Answers may use concise Markdown. Only the human marks feedback addressed.
 
-For a batch requesting changes, revise only the affected proposed files using pair_step with revises set to the returned review ID and changes containing their replacements. Retained files are loaded locally, so do not copy them into another tool call. File baselines are checked and the complete revised group needs fresh approval. Do not silently move an old comment to new lines. If the original file changed, read current files and prepare a fresh proposal. A mixed batch of questions and requests pauses changes until the human continues.
+For a batch requesting changes, revise only the affected proposed files using pair_step with revises set to the returned review ID and changes containing their replacements. Retained files are loaded locally, so do not copy them into another tool call. File baselines are checked and the complete revised step needs fresh approval. Do not silently move an old comment to new lines. If the original file changed, read current files and prepare a fresh proposal. A mixed batch of questions and requests pauses changes until the human continues.
 
 After failure, inspect and explain the problem before proposing repair. Previous permission is spent. Preserve partial work and human changes.
 

@@ -1,8 +1,8 @@
 {
   "name": "pi-pair",
   "displayName": "Pair for Pi",
-  "description": "Review exact Pi proposals and approve changes inside your project in VS Code.",
-  "version": "0.5.1",
+  "description": "Review exact Pi proposals and approve steps inside your project in VS Code.",
+  "version": "0.5.2",
   "publisher": "local-pair",
   "license": "UNLICENSED",
   "engines": { "vscode": "^1.96.0" },
@@ -11,7 +11,7 @@
   "extensionKind": ["ui"],
   "activationEvents": ["onStartupFinished", "onUri"],
   "capabilities": {
-    "untrustedWorkspaces": { "supported": "limited", "description": "Review is available; approving or denying changes requires a trusted workspace." },
+    "untrustedWorkspaces": { "supported": "limited", "description": "Review is available; approving or denying steps requires a trusted workspace." },
     "virtualWorkspaces": { "supported": false }
   },
   "scripts": { "test": "node --test tests/*.test.cjs" },
@@ -19,7 +19,7 @@
     "viewsContainers": { "activitybar": [{ "id": "pair", "title": "Pair", "icon": "media/pair.svg" }] },
     "views": { "pair": [
       { "id": "pair.review", "name": "Review", "type": "webview" },
-      { "id": "pair.changes", "name": "Changes" },
+      { "id": "pair.changes", "name": "Step Actions" },
       { "id": "pair.checkpoint", "name": "Checkpoint & Constraints", "type": "webview", "visibility": "collapsed" }
     ] },
     "commands": [
@@ -37,12 +37,12 @@
       { "command": "pair.checkpoint", "title": "Open Checkpoint and Constraints", "category": "Pair", "icon": "$(list-unordered)" },
       { "command": "pair.addConstraint", "title": "Add Constraint", "category": "Pair", "icon": "$(add)", "enablement": "pair.canEditConstraints" },
       { "command": "pair.removeConstraint", "title": "Remove Constraint", "category": "Pair", "icon": "$(remove)", "enablement": "pair.canEditConstraints && pair.hasConstraints" },
-      { "command": "pair.approve", "title": "Approve Entire Change", "category": "Pair", "icon": "$(check)", "enablement": "pair.canApprove" },
-      { "command": "pair.deny", "title": "Deny Change", "category": "Pair", "icon": "$(close)", "enablement": "pair.canDecide" },
+      { "command": "pair.approve", "title": "Approve Entire Step", "category": "Pair", "icon": "$(check)", "enablement": "pair.canApprove" },
+      { "command": "pair.deny", "title": "Deny Step", "category": "Pair", "icon": "$(close)", "enablement": "pair.canDecide" },
       { "command": "pair.denyWithNote", "title": "Deny with Note", "category": "Pair", "icon": "$(comment)", "enablement": "pair.canDecide" },
-      { "command": "pair.openChange", "title": "Open Change", "category": "Pair" },
-      { "command": "pair.nextFile", "title": "Next File in Change", "category": "Pair", "icon": "$(arrow-down)" },
-      { "command": "pair.previousFile", "title": "Previous File in Change", "category": "Pair", "icon": "$(arrow-up)" },
+      { "command": "pair.openChange", "title": "Open Step Action", "category": "Pair" },
+      { "command": "pair.nextFile", "title": "Next Action in Step", "category": "Pair", "icon": "$(arrow-down)" },
+      { "command": "pair.previousFile", "title": "Previous Action in Step", "category": "Pair", "icon": "$(arrow-up)" },
       { "command": "pair.selectSession", "title": "Select Pi Session", "category": "Pair", "icon": "$(plug)" },
       { "command": "pair.refresh", "title": "Refresh Connection", "category": "Pair", "icon": "$(refresh)" }
     ],

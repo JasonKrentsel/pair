@@ -1,16 +1,18 @@
 # Pair for Pi
 
-Pair adds an explanation and a permission decision to the next coherent change. Related edits across a few files share one review: inspect the file list and individual diffs, then choose **Approve all**, **Deny**, or **Deny with note**.
+Pair adds an explanation and a permission decision to the next coherent step. Related edits across a few files share one review: inspect the file list and individual diffs, then choose **Approve step**, **Deny**, or **Deny with note**.
 
 ## Current status
 
+Version 0.5.2 calls the approval unit a **step** and each edit, write, or command an **action**. It includes the 0.5.1 Review Desk fixes: show the proposal before comments exist, display a labeled inline overview when per-file explanations are absent, and reconnect automatically when Pi replaces its listener with a single matching session.
+
 Version 0.5.0 adds native VS Code section comments and a Review Desk. Draft questions and requested corrections locally, then send them as one batch. Questions pause edits for discussion; requested corrections retain unaffected proposed files and require fresh approval. The right sidebar manages the current decision; the Review Desk opens in the editor area.
 
-Version 0.4.0 adds a shared checkpoint and human constraints panel in Pi and VS Code. The two broad skills now favor proportional design, coherent edits, focused verification, and concise milestone reports. Existing change approvals remain exact and one-use.
+Version 0.4.0 adds a shared checkpoint and human constraints panel in Pi and VS Code. The two broad skills now favor proportional design, coherent edits, focused verification, and concise milestone reports. Existing step approvals remain exact and one-use.
 
 Version 0.2 adds a fullscreen review UI with syntax highlighting, file/hunk navigation, inline feedback, compact history, and optional VS Code diffs. Automated behavior checks, type checking, visual fixtures, and isolated Pi integration checks are documented in `docs/ui-validation.md`. Restart Pi or use /reload when idle after updating the local package.
 
-Version 0.2.1 adds compact schema errors and short design/status receipts. Invalid Pair arguments report up to three corrections with one-based change/edit numbers, without echoing source or commands. Nothing runs before the corrected request passes validation and permission review. Existing history, including saved validation failures, remains readable.
+Version 0.2.1 adds compact schema errors and short design/status receipts. Invalid Pair arguments report up to three corrections with one-based action/edit numbers, without echoing source or commands. Nothing runs before the corrected request passes validation and permission review. Existing history, including saved validation failures, remains readable.
 
 Version 0.2.2 records design approval from chat and keeps large-diff decision controls visible after terminal resizing.
 
@@ -20,11 +22,11 @@ Version 0.3 adds a VS Code companion with native, read-only diffs, workspace lan
 
 Use /pair to enable Pair in a new conversation, or /pair on to enable it explicitly. No goal form or design document is required. Existing active Pair sessions use the new permission behavior after reload.
 
-For a meaningful change, the agent calls pair_step with a title, concise why, and a changes array. A group can contain edits/writes to 1–4 distinct files, or one standalone shell command. Combine multiple replacements to the same file in one edit entry. A single change field remains accepted for compatibility.
+For a meaningful step, the agent calls pair_step with a title, concise why, and a changes array. A step can contain edits/writes to 1–4 distinct files, or one standalone shell command. Combine multiple replacements to the same file in one edit entry. Commands and file operations cannot yet be mixed in one step. The changes array and legacy single change field retain their existing names for compatibility.
 
 The centered review fits its content. File tabs leave room for syntax-colored code; an optional sidebar is available on wide terminals. Unified and adaptive side-by-side diffs show line numbers, changed-word emphasis, and searchable hunks. The short explanation remains visible and its full text is reachable. Decision controls stay fixed. Commands appear once with their working directory.
 
-- **a — Approve all:** execute exactly the displayed group.
+- **a — Approve step:** execute every displayed action in the step.
 - **d — Deny:** execute nothing and stop the turn.
 - **n — Deny with note:** execute nothing and explain what should change.
 - **Escape:** deny from the main review. Inside note entry, return to the still-pending review.
@@ -42,11 +44,11 @@ A denial note can request a revision, skip an action, or ask for discussion. A r
 
 Install the local companion from `vscode/` with `npm run package:vscode`, then install the generated VSIX in VS Code. Use `/pair code` to open Pi's current working directory in VS Code and focus this session. A single matching session connects automatically; multiple sessions have an explicit selector. The next proposal opens its explanation, file list, and native diff. `pair.openReviewAutomatically` controls automatic opening.
 
-The sidebar keeps **Approve change**, **Deny**, and **Deny with note** available while the diff scrolls. Approval covers the complete listed group. Commands display their exact text and working directory. Approving in either interface resolves the same request once; the result appears in both. Closing VS Code leaves the Pi request pending. After Pi reloads, use `/pair code` to reconnect; saved results are read-only.
+The sidebar keeps **Approve step**, **Deny**, and **Deny with note** available while the diff scrolls. Approval covers the complete listed step. Commands display their exact text and working directory. Approving in either interface resolves the same request once; the result appears in both. Closing VS Code leaves the Pi request pending. After Pi reloads, use `/pair code` to reconnect; saved results are read-only.
 
 Diffs inherit the actual file's language mode or workspace file associations for a new file, using your VS Code theme and font. Virtual documents provide syntax highlighting, but language servers requiring real project files may not provide semantic colors or IntelliSense. A modified preview cannot be approved. VS Code approval also blocks unsaved affected source buffers; save or discard those edits before approving. Pi's terminal only checks on-disk state and cannot see unsaved editor buffers.
 
-The connection is authenticated and restricted to the local machine and matching workspace. Snapshot transport, navigation, focus and polling use no model calls; unchanged reviews use ETags. This release supports local desktop VS Code; remote SSH, WSL, containers, and web VS Code are outside its scope. Optional design approval continues through chat or `/pair approve`; companion approval applies to `pair_step` changes.
+The connection is authenticated and restricted to the local machine and matching workspace. Snapshot transport, navigation, focus and polling use no model calls; unchanged reviews use ETags. This release supports local desktop VS Code; remote SSH, WSL, containers, and web VS Code are outside its scope. Optional design approval continues through chat or `/pair approve`; companion approval applies to `pair_step` steps.
 
 ## Section feedback and Review Desk
 

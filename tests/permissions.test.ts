@@ -40,7 +40,7 @@ test("denial applies nothing; a note permits only a fresh proposal", async () =>
     assert.equal(result.details.status,"Denied");
     assert.equal(f.events.length,0);
     assert.ok(f.controller.guard({toolName:"write",input:{path:"a.ts",content:"x"}} as any)?.block);
-    await assert.rejects(f.run([{tool:"write",path:"a.ts",content:"x"}]),/exact change was denied/);
+    await assert.rejects(f.run([{tool:"write",path:"a.ts",content:"x"}]),/exact step was denied/);
   } finally { f.close(); }
 });
 

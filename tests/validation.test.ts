@@ -20,15 +20,15 @@ function failure(prepare: (value: unknown) => unknown, value: unknown): string {
 
 test("compact validation names the selected tool's fields without unrelated union alternatives", () => {
   const text = failure(step, { ...valid, changes: [{ tool: "edit", edits: [{ oldText: "a", newText: "b" }] }] });
-  assert.match(text, /Change 1: missing path/);
+  assert.match(text, /Action 1: missing path/);
   assert.doesNotMatch(text, /content|command/);
   const command = failure(step, { ...valid, changes: [{ tool: "powershell" }] });
-  assert.match(command, /Change 1: missing command/);
+  assert.match(command, /Action 1: missing command/);
 });
 
 test("nested replacements and size/range errors identify what must change", () => {
   const nested = failure(step, { ...valid, changes: [valid.changes[0], { tool: "edit", path: "b.ts", edits: [{ oldText: "a" }] }] });
-  assert.match(nested, /Change 2\.edit 1: missing newText/);
+  assert.match(nested, /Action 2\.edit 1: missing newText/);
   assert.match(failure(step, { ...valid, changes: [{ tool: "write", path: "a.ts", content: "PRIVATE_SOURCE_MARKER".repeat(4000) }] }), /content: use at most 60000 characters/);
   assert.match(failure(step, { ...valid, changes: [{ tool: "bash", command: "echo ok", timeout: 301 }] }), /timeout: must be at most 300/);
   assert.match(failure(step, { ...valid, changes: [{ tool: "edit", path: "a.ts", edits: [{ oldText: "", newText: "" }] }] }), /oldText: use at least 1/);

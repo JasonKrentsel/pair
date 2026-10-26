@@ -5,7 +5,7 @@ type Issue = { keyword: string; instancePath: string; params: Record<string, any
 type SchemaShape = TSchema & { properties?: Record<string, SchemaShape>; items?: SchemaShape; anyOf?: SchemaShape[]; const?: unknown };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const bounded = (value: string, limit = 150) => value.replace(/[\x00-\x1f\x7f-\x9f]/g, " ").slice(0, limit);
-const label = (path: string) => path.replace(/^\//, "").replace(/changes\/(\d+)/, (_, i) => `Change ${Number(i) + 1}`)
+const label = (path: string) => path.replace(/^\//, "").replace(/changes\/(\d+)/, (_, i) => `Action ${Number(i) + 1}`)
   .replace(/edits\/(\d+)/, (_, i) => `edit ${Number(i) + 1}`).replaceAll("/", ".") || "arguments";
 
 function format(issue: Issue, prefix = "", choices?: unknown[]): string {
@@ -58,7 +58,7 @@ export function preparePairArguments<T extends TSchema>(tool: "pair_step" | "pai
     });
     if (tool === "pair_step" && object(args) && Array.isArray(args.changes)) {
       for (const [index, change] of args.changes.slice(0, 4).entries()) {
-        const where = `Change ${index + 1}`;
+        const where = `Action ${index + 1}`;
         if (!object(change)) { issues.push(`${where}: expected an object with tool and its input fields.`); continue; }
         const selected = typeof change.tool === "string" ? byTool.get(change.tool) : undefined;
         if (!selected) {

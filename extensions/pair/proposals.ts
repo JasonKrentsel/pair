@@ -24,9 +24,9 @@ export function saveProposal(id: string, root: string, title: string, why: strin
 
 /** Revisions operate on the same original files; unrelated drafts remain exact. */
 export function reviseProposal(root: string, previous: SavedProposal, replacements: ChangeInput[] = []): ChangeInput[] {
-  if (root !== previous.root) throw new Error("This proposal belongs to another project. Prepare a fresh change.");
+  if (root !== previous.root) throw new Error("This proposal belongs to another project. Prepare a fresh step.");
   for (const [path, hash] of Object.entries(previous.before)) {
-    if (snapshot(root, path).hash !== hash) throw new Error(`${path} changed since this proposal. Read it and prepare a fresh change instead of retaining stale edits.`);
+    if (snapshot(root, path).hash !== hash) throw new Error(`${path} changed since this proposal. Read it and prepare a fresh step instead of retaining stale edits.`);
   }
   const seen = new Set<string>();
   const changes = structuredClone(previous.changes);

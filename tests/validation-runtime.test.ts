@@ -43,7 +43,7 @@ test("Pi's real tool-call pipeline returns compact errors before hooks, previews
     const outcome = await f.run(args);
     const message = outcome.result.content.filter((item) => item.type === "text").map((item) => item.text).join("\n");
     assert.equal(outcome.isError, true);
-    assert.match(message, /Change 3/);
+    assert.match(message, /Action 3/);
     assert.match(message, /tool/);
     assert.match(message, /path/);
     assert.match(message, /Nothing ran/);

@@ -28,7 +28,7 @@ test("commands fit their content and appear once", () => {
   const lines = f.render();
   assert.equal(readable(lines).split(command).length - 1, 1);
   assert.ok(lines.length < 20, `short command used ${lines.length} rows`);
-  assert.match(readable(lines), /Approve command/);
+  assert.match(readable(lines), /Approve step · command/);
   assert.doesNotMatch(readable(lines), /Changes · \/ Search/);
 });
 

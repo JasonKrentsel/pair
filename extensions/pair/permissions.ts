@@ -124,7 +124,7 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
   const guard = (event: ToolCallEvent) => {
     const readOnly = ["read", "grep", "find", "ls"].includes(event.toolName)
       || event.toolName === "pair_work" && ["status", "checkpoint", "feedback"].includes((event.input as { action?: string }).action ?? "");
-    if (stopThisRun && !readOnly) return { block: true as const, reason: "Pair: the human denied this change. Address their feedback and stop; do not retry through another tool." };
+    if (stopThisRun && !readOnly) return { block: true as const, reason: "Pair: the human denied this step. Address their feedback and stop; do not retry through another tool." };
     const permit = event.parentToolCallId ? permits.get(event.parentToolCallId) : undefined;
     if (permit && event.toolName === permit.tool && canonical(event.input) === permit.input) {
       permits.delete(event.parentToolCallId!);
@@ -138,12 +138,12 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
     }
     if (readOnly || ["pair_step", "pair_work"].includes(event.toolName)) return;
     if (["bash", "powershell"].includes(event.toolName) && "command" in event.input && routineCommand(event.input.command)) return;
-    return { block: true as const, reason: "Pair: use pair_step to explain one coherent change and show its exact edits for approval. Related files can share one request; no design or increment proposal is required." };
+    return { block: true as const, reason: "Pair: use pair_step to explain one coherent step and show its exact edits for approval. Related files can share one request; no design or increment proposal is required." };
   };
 
   pi.registerTool<typeof Step, StepDetails>({
-    name: "pair_step", label: "Change", parameters: Step, executionMode: "sequential", renderShell: "self",
-    description: "Explain and request approval for one coherent change across up to four files, or one command. Approved actions run in order; failure stops the rest without rollback. Deny stops; a note permits a revised proposal for fresh approval. History reports success.",
+    name: "pair_step", label: "Step", parameters: Step, executionMode: "sequential", renderShell: "self",
+    description: "Explain and request approval for one coherent step across up to four files, or one command. Approved actions run in order; failure stops the rest without rollback. Deny stops; a note permits a revised proposal for fresh approval. History reports success.",
     prepareArguments: preparePairArguments("pair_step", Step, normalizeStepArguments),
     reachesTools: (input) => {
       const changes = [...(input.changes as { tool?: string }[] ?? []), ...(typeof input.revises === "string" ? proposals.get(input.revises)?.changes ?? [] : [])];
@@ -152,11 +152,11 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
     async execute(id, params, signal, update, ctx) {
       const { root } = options.active(ctx);
       const requestGeneration = generation;
-      if (!ctx.hasUI || ctx.mode !== "tui") throw new Error("Change permissions require Pi's interactive terminal.");
-      if (stopThisRun) throw new Error("The human denied this change. Stop until they continue.");
+      if (!ctx.hasUI || ctx.mode !== "tui") throw new Error("Step permissions require Pi's interactive terminal.");
+      if (stopThisRun) throw new Error("The human denied this step. Stop until they continue.");
       if (!params.changes && !params.revises) throw new Error("Supply changes, or a review ID in revises to retain its proposed files.");
       const previous = params.revises ? proposals.get(params.revises) : undefined;
-      if (params.revises && (!previous || latest?.reviewId !== params.revises || !bridge?.archived(params.revises))) throw new Error("That is not the latest retained proposal. Read the current files and prepare a fresh change.");
+      if (params.revises && (!previous || latest?.reviewId !== params.revises || !bridge?.archived(params.revises))) throw new Error("That is not the latest retained proposal. Read the current files and prepare a fresh step.");
       const inputs = previous ? reviseProposal(root, previous, params.changes) : params.changes!;
       for (const change of inputs) {
         if (!ctx.tools.some((entry) => entry.name === change.tool)) throw new Error(`The ${change.tool} tool is unavailable.`);
@@ -164,7 +164,7 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
       const prepared = await prepareChanges(root, inputs, signal);
       if (requestGeneration !== generation) throw new Error("The session changed while preparing the preview. Nothing was published or executed.");
       const fingerprint = canonical(prepared.map((change) => ({ tool: change.tool, input: change.input })));
-      if (rejected.has(fingerprint)) throw new Error("This exact change was denied. Incorporate the note into a different change or ask a clarification question; do not repeat the same permission request.");
+      if (rejected.has(fingerprint)) throw new Error("This exact step was denied. Incorporate the note into a different change or ask a clarification question; do not repeat the same permission request.");
       const previews = prepared.map((change) => change.preview);
       const details: StepDetails = { title: params.title.trim(), why: params.why.trim(), status: "Awaiting permission", changes: previews, revises: params.revises };
       if (!details.title || !details.why) throw new Error("Explain the change and why it is needed.");
@@ -213,8 +213,8 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
         pi.appendEntry("pair-step-v1", { title: details.title, status, note, files: previews.map((preview) => preview.label) });
         return remember({
           content: [{ type: "text", text: note && !stopThisRun
-            ? `Nothing was applied. Human feedback: ${note}\nFollow its intent: revise with a fresh proposal, skip the action, or explain before proposing. Ask only if necessary. Never execute without fresh approval or repeat the rejected change.`
-            : "Nothing was applied. The human denied this change. Acknowledge briefly and stop; do not try an alternative mutation." }],
+            ? `Nothing was applied. Human feedback: ${note}\nFollow its intent: revise with a fresh proposal, skip the action, or explain before proposing. Ask only if necessary. Never execute without fresh approval or repeat the rejected step.`
+            : "Nothing was applied. The human denied this step. Acknowledge briefly and stop; do not try an alternative mutation." }],
           details: { ...details, status, note, changes },
         }, requestGeneration);
       }
@@ -233,7 +233,7 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
           assertUnchanged(root, prepared.slice(index));
           latest = { ...details, status: `Applying ${index + 1}/${prepared.length} · ${change.preview.label}`, changes: completed };
           bridge?.update(latest.status, completed);
-          update?.({ content: [{ type: "text", text: "Applying approved changes." }], details: latest });
+          update?.({ content: [{ type: "text", text: "Running approved step." }], details: latest });
           permits.set(id, { tool: change.tool, input: canonical(change.input), root, path: change.path, hash: change.before?.hash });
           const outcome = await ctx.executeTool(change.tool, change.input, { signal });
           if (requestGeneration !== generation) throw new Error("The session changed while this action ran. Inspect its files; remaining actions were not run.");

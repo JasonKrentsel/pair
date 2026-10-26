@@ -184,7 +184,7 @@ function createFeedbackController(vscode, context, options) {
       }
       if (info.side === 'proposed' && sameReview(state.review, identity(info.review))) {
         const explanation = change.why || info.review.why;
-        const notes = [...(explanation ? [{ title: change.why ? 'Why this file changes' : 'Change overview · applies to the whole proposal', why: explanation, startLine: 1, endLine: 1 }] : []), ...(change.annotations || [])];
+        const notes = [...(explanation ? [{ title: change.why ? 'Why this file changes' : 'Step overview · applies to the whole proposal', why: explanation, startLine: 1, endLine: 1 }] : []), ...(change.annotations || [])];
         for (const [index, note] of notes.entries()) {
           if (!Number.isInteger(note.startLine) || !Number.isInteger(note.endLine) || note.startLine < 1 || note.endLine > sourceLines(change.after).length || note.endLine < note.startLine) continue;
           desired.set(uri + ':explanation:' + index, { uri: info.uri, range: new vscode.Range(note.startLine - 1, 0, note.endLine - 1, 0), label: note.title || 'Why these lines?', comments: [nativeComment(note.why, 'Pi', 'Explanation')], contextValue: 'pairExplanation', expand: index === 0 });

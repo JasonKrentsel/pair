@@ -28,8 +28,8 @@ function normalizeChanges(value: unknown): ChangePreview[] {
     const item = record(entry) ?? {};
     const count = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
     const change: ChangePreview = {
-      label: text(item.label) || `Change ${index + 1}`,
-      kind: text(item.kind) || "Recorded change",
+      label: text(item.label) || `Action ${index + 1}`,
+      kind: text(item.kind) || "Recorded action",
       added: count(item.added), removed: count(item.removed),
     };
     for (const key of ["diff", "before", "after", "text", "command", "cwd", "status", "why"] as const) {
@@ -56,7 +56,7 @@ export function normalizeStepDetails(value: unknown, content: unknown = [], isEr
   }).join("\n") : "";
   const changes = normalizeChanges(data.changes);
   return {
-    title: text(data.title) || "Change",
+    title: text(data.title) || "Step",
     why: text(data.why) ?? "",
     status: status || (isError ? "Failed" : "Recorded result"),
     note: text(data.note), changes,
@@ -79,11 +79,11 @@ function bounded(context: RenderContext, render: (width: number) => string[]): C
 }
 
 export function renderStepCall(args: unknown, theme: Theme, context: RenderContext): Component {
-  return bounded(context, (width) => wrapTextWithAnsi(theme.fg("accent", "Change · " + plain(text(record(args)?.title) ?? "Preparing")), width));
+  return bounded(context, (width) => wrapTextWithAnsi(theme.fg("accent", "Step · " + plain(text(record(args)?.title) ?? "Preparing")), width));
 }
 
 export function renderStepResult(result: AgentToolResult<unknown>, { expanded, isPartial }: ToolRenderResultOptions, theme: Theme, context: RenderContext): Component {
-  if (isPartial) return bounded(context, (width) => wrapTextWithAnsi(theme.fg("muted", plain(text(record(result.details)?.status) ?? "Preparing change")), width));
+  if (isPartial) return bounded(context, (width) => wrapTextWithAnsi(theme.fg("muted", plain(text(record(result.details)?.status) ?? "Preparing step")), width));
   const details = normalizeStepDetails(result.details, result.content, context.isError);
   return bounded(context, (width) => {
     const lines: string[] = [];

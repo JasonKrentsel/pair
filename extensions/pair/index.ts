@@ -402,14 +402,14 @@ export default function pairExtension(pi: ExtensionAPI) {
       ctx.ui.notify(`Design revision ${current.design.revision} is already approved.`, "info");
       return;
     }
-    if (current.phase !== "design-approval") throw new Error("Changes now request permission in place through pair_step. Saved increment approval is no longer needed; ask the agent for the next explained change.");
+    if (current.phase !== "design-approval") throw new Error("Steps now request permission in place through pair_step. Saved increment approval is no longer needed; ask the agent for the next explained step.");
     if (!confirmed) {
       const selected = await showPanel(ctx, current, "Open /pair Review for the current diff.", true);
       return await handlePanelAction(selected, ctx, current);
     }
     if (current.phase === "design-approval") {
       recordDesignApproval(ctx, current.design.revision);
-      pi.sendUserMessage("The displayed design is approved. Start with the smallest understandable change. Use pair_step to explain the exact edit and request permission; do not batch the implementation into an increment.");
+      pi.sendUserMessage("The displayed design is approved. Start with the smallest understandable step. Use pair_step to explain the exact edit and request permission; do not batch the implementation into an increment.");
     }
   }
 
@@ -426,7 +426,7 @@ export default function pairExtension(pi: ExtensionAPI) {
   }
 
   async function resume(ctx: ExtensionCommandContext) {
-    ctx.ui.notify("Ask the agent to continue with the next explained step. Each change requests its own permission; the saved review stays available in /pair.", "info");
+    ctx.ui.notify("Ask the agent to continue with the next explained step. Each step requests its own permission; the saved review stays available in /pair.", "info");
     return;
   }
 
@@ -464,7 +464,7 @@ export default function pairExtension(pi: ExtensionAPI) {
     const text = current.design.text.replace("Latest increment awaits human review.\n<!-- pair-progress:end -->", "Latest increment reviewed. Ready for the next proposal.\n<!-- pair-progress:end -->");
     saveDesign(current.root, current.design.path, text);
     commit({ ...current, phase: "proposal", pauseReason: undefined, design: { ...current.design, text } }, ctx);
-    ctx.ui.notify("Saved review finished. Ask for the next explained change when ready.", "info");
+    ctx.ui.notify("Saved review finished. Ask for the next explained step when ready.", "info");
   }
 
   async function handlePanelAction(selected: { action: string; view: PanelView }, ctx: ExtensionCommandContext, displayed: PairState): Promise<void> {
@@ -481,7 +481,7 @@ export default function pairExtension(pi: ExtensionAPI) {
   }
 
   pi.registerCommand("pair", {
-    description: "Review changes, checkpoint, and constraints. Actions: checkpoint, constraint [task|turn] <text>, code, on, design, new, approve (design), revise, finish, off.",
+    description: "Review steps, checkpoint, and constraints. Actions: checkpoint, constraint [task|turn] <text>, code, on, design, new, approve (design), revise, finish, off.",
     handler: async (args, ctx) => {
       try {
         if (ctx.mode !== "tui") throw new Error("Pair's controls require Pi's interactive terminal mode.");

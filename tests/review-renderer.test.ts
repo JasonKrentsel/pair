@@ -161,7 +161,7 @@ test("unrecognized persisted metadata cannot crash history or claim successful e
 
 test("partial results stay pending and normalization preserves exact saved snapshots", () => {
   const pending = renderStepResult({ details: {}, content: [] }, { expanded: false, isPartial: true }, theme, { outputPad: 0, isError: false });
-  assert.equal(readable(pending.render(60)), "Preparing change");
+  assert.equal(readable(pending.render(60)), "Preparing step");
   const original = { title: "Edit", status: "Applied", changes: [{ label: "a.ts", kind: "Edit", before: "\uFEFFold\r\n", after: "new\n", added: 1, removed: 1 }] };
   const normalized = normalizeStepDetails(original);
   assert.equal(normalized.changes?.[0].before, original.changes[0].before);

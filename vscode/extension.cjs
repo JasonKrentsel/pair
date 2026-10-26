@@ -96,16 +96,15 @@ function activate(context) {
     const nonce = crypto.randomBytes(16).toString('hex');
     const currentIdentity = review ? JSON.stringify(identity(review)).replace(/</g, '\\u003c') : 'null';
     const count = review?.changes.length || 0;
-    const fileCount = review?.changes.filter(change => change.before !== undefined || change.after !== undefined).length || 0;
     const disabled = canDecide() ? '' : 'disabled';
     const approveDisabled = canApprove() ? '' : 'disabled';
     const dirty = dirtyFiles();
     const blocker = !vscode.workspace.isTrusted ? 'Trust this workspace to respond to a proposal.'
       : alteredSnapshots().length ? 'A review snapshot was modified. Close its diff and reopen the Pair review before approving.'
       : dirty.length ? `Save or discard unsaved changes in ${dirty.join(', ')} before approving.`
-      : feedbackController?.blocksApproval() ? 'Send or remove your draft feedback before approving this change.'
+      : feedbackController?.blocksApproval() ? 'Send or remove your draft feedback before approving this step.'
       : !connected ? errorMessage || 'Start Pi with Pair in this folder. Matching sessions appear here automatically.' : '';
-    const actionLabel = fileCount === count && count > 1 ? `Approve all ${count} files` : 'Approve change';
+    const actionLabel = 'Approve step';
     const commands = review?.changes.filter(change => change.command !== undefined).map(change => `<div class="command"><div class="muted">${escape(change.kind)} · ${escape(change.cwd || selected?.root)}</div><pre>${escape(change.command)}</pre></div>`).join('') || '';
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"><meta name="viewport" content="width=device-width,initial-scale=1"><style nonce="${nonce}">
       h3{font-size:1em;font-weight:600;margin:14px 0 6px}.feedback-summary{margin:20px 0 14px;padding-top:8px;border-top:1px solid var(--vscode-panel-border)}.draft{padding:8px 0;border-bottom:1px solid var(--vscode-panel-border)}.draft p{margin:4px 0;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.why p{margin:6px 0}.why ul{padding-left:20px}.why code{font-family:var(--vscode-editor-font-family);background:var(--vscode-textCodeBlock-background)}
@@ -115,7 +114,7 @@ function activate(context) {
       <div class="status">Pair ${escape(VERSION)} · ${escape(selected ? `${path.basename(selected.root)} · ${selected.sessionId.slice(0, 8)}` : 'Pair for Pi')} ${connected ? '' : '· disconnected'}</div>
       ${review ? `<h2>${escape(review.title)}</h2><div class="status">${escape(review.status)} · ${count} ${count === 1 ? 'action' : 'actions'}</div>
         <div class="review-controls"><div class="actions"><button data-action="approve" ${approveDisabled}>${escape(actionLabel)}</button><button class="secondary" data-action="deny" ${disabled}>Deny</button><button class="secondary" data-action="note" ${disabled}>Deny with note</button></div>${feedbackController?.sidebar('controls') || ''}</div>
-        <div class="why">${markdown(review.why)}</div>${commands}<div class="muted scope">Approval covers the complete change.</div>`
+        <div class="why">${markdown(review.why)}</div>${commands}<div class="muted scope">Approval covers every action in this step.</div>`
         : `<p class="empty">${sessions.length > 1 ? 'Choose the Pi session you want to review.' : connected ? 'Connected. The next Pair proposal will appear here.' : 'Open the same folder in Pi and VS Code.'}</p>`}
       ${blocker ? `<p class="warning" role="status">${escape(blocker)}</p>` : ''}
       ${feedbackController?.sidebar(review ? 'drafts' : 'all') || ''}
@@ -134,7 +133,7 @@ function activate(context) {
       entry.tooltip = [item.change.label, item.change.kind, item.change.status].filter(Boolean).join('\n');
       if (file && (item.change.before !== undefined || item.change.after !== undefined)) entry.resourceUri = vscode.Uri.file(file);
       else entry.iconPath = new vscode.ThemeIcon('terminal');
-      entry.command = { command: 'pair.openChange', title: 'Open change', arguments: [item] };
+      entry.command = { command: 'pair.openChange', title: 'Open action', arguments: [item] };
       return entry;
     }
   };
@@ -389,7 +388,7 @@ function activate(context) {
     if (selected?.sessionId !== currentSession.sessionId || !matchesWorkspace(currentSession) || !connected || !sameReview(review, expected) || !review.pending) throw new Error('The review changed while you were responding. Open the current proposal.');
     if (action === 'approve' && dirtyFiles().length) throw new Error(`Save or discard unsaved changes in ${dirtyFiles().join(', ')} before approving. Pair does not overwrite editor buffers.`);
     if (action === 'approve' && alteredSnapshots().length) throw new Error('A review snapshot was modified. Close its diff and reopen the Pair review before approving.');
-    if (action === 'approve' && feedbackController?.blocksApproval()) throw new Error('Send or remove your draft feedback before approving this change.');
+    if (action === 'approve' && feedbackController?.blocksApproval()) throw new Error('Send or remove your draft feedback before approving this step.');
     busy = true;
     update();
     try {

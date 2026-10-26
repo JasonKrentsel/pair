@@ -6,8 +6,8 @@ Review Pair proposals in the same VS Code workspace as your Pi working directory
 
 1. Install this companion and use Pair 0.5.0 or later in Pi for inline section feedback. Checkpoints require Pair 0.4.0; basic review remains compatible with Pair 0.3.0.
 2. Open Pi's working directory in VS Code. A single matching Pi session connects automatically. With multiple sessions, use **Pair: Select Pi Session**.
-3. Pair's next proposal opens its explanation, file list and first native diff. Choose another file in **Changes**, or use **Pair: Next File in Change** / **Previous File in Change**.
-4. Choose **Approve change**, **Deny**, or **Deny with note**. Approval covers the complete listed group. Pi executes the exact reviewed operations and reports their result in both interfaces.
+3. Pair's next proposal opens its explanation, file list and first native diff. Choose another file in **Step Actions**, or use **Pair: Next Action in Step** / **Previous Action in Step**.
+4. Choose **Approve step**, **Deny**, or **Deny with note**. Approval covers the complete listed step. Pi executes the exact reviewed operations and reports their result in both interfaces.
 
 The review buttons remain in the sidebar while the native editor scrolls. The editor toolbar also links back to the review and offers approval actions. Use the normal VS Code diff layout and language-mode controls to adjust presentation. `pair.openReviewAutomatically` can disable automatic focus for new proposals; explicitly opening a review from Pi still focuses it.
 

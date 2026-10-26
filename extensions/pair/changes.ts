@@ -61,7 +61,7 @@ export function filePreview(path: string, before: string, after: string, kind: s
 
 /** Prepare every file before requesting permission. No filesystem writes occur here. */
 export async function prepareChanges(root: string, changes: ChangeInput[], signal?: AbortSignal): Promise<PreparedChange[]> {
-  if (!changes.length || changes.length > 4) throw new Error("Choose one coherent change involving 1–4 files, or one standalone command.");
+  if (!changes.length || changes.length > 4) throw new Error("Choose one coherent step involving 1–4 files, or one standalone command.");
   if (changes.length > 1 && changes.some((change) => !('path' in change))) {
     throw new Error("Review shell commands separately. A multi-file permission can contain only edits and writes.");
   }
