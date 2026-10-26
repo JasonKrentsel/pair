@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "nod
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { outputTail, type CommandProgress } from "./command-output.ts";
 import type { ChangePreview } from "./review-model.ts";
 import type { WorkMemory } from "./checkpoint.ts";
 import { FeedbackStore, parseFeedbackBatch, parseThreadState, type FeedbackDecision, type ReviewEvent } from "./feedback.ts";
@@ -79,6 +80,7 @@ export class PairReviewBridge {
   private onDecision?: (decision: BridgeDecision) => void;
   private validate?: () => void;
   private sequence = 0;
+  private commandProgress: CommandProgress[] = [];
   private gate = 0;
   private suspended?: { reviewId: string; threadIds: string[] };
   private lifecycle: Promise<void> = Promise.resolve();
@@ -90,6 +92,16 @@ export class PairReviewBridge {
   }
 
   get current(): BridgeReview | undefined { return this.review && structuredClone(this.review); }
+  get progress(): CommandProgress[] { return structuredClone(this.commandProgress); }
+  setCommandProgress(reviewId: string, index: number, status: CommandProgress["status"], text: string): void {
+    if (this.review?.id !== reviewId || this.review.pending || !this.review.changes[index]?.command) return;
+    const next = { reviewId, index, status, ...outputTail(text) };
+    const previous = this.commandProgress.find(item => item.index === index);
+    if (previous?.status === status && previous.text === next.text && previous.truncated === next.truncated) return;
+    this.commandProgress = [...this.commandProgress.filter(item => item.index !== index), next].sort((a, b) => a.index - b.index);
+    // Ephemeral output must not revise approved snapshots or append feedback events.
+    this.sequence++;
+  }
   get decisionVersion(): number { return this.gate; }
   get questionPending(): boolean { return !!this.suspended; }
   get sessionId(): string | undefined { return this.registry?.sessionId; }
@@ -254,6 +266,7 @@ export class PairReviewBridge {
   }
 
   cancel(): void {
+    if (this.commandProgress.length) { this.commandProgress = []; this.sequence++; }
     if (this.suspended) { this.suspended = undefined; this.update("Cancelled"); }
     if (!this.review?.pending) return;
     this.decide({ action: "deny" });
@@ -304,7 +317,7 @@ export class PairReviewBridge {
       const review = this.current;
       const summary = review && { id: review.id, revision: review.revision, fingerprint: review.fingerprint, gate: review.gate, title: review.title, why: review.why, status: review.status, pending: review.pending };
       const memory = this.memoryHandlers?.read(registry.root);
-      return this.send(response, 200, { version: 1, sessionId: registry.sessionId, root: registry.root, review: (path === "/status" ? summary : review) ?? null, memory: memory ?? null, feedback: this.feedback, ...(this.focus ? { focus: this.focus } : {}) });
+      return this.send(response, 200, { version: 1, sessionId: registry.sessionId, root: registry.root, review: (path === "/status" ? summary : review) ?? null, memory: memory ?? null, feedback: this.feedback, progress: this.progress, ...(this.focus ? { focus: this.focus } : {}) });
     }
     if (!["/decision", "/memory", "/feedback", "/feedback-state"].includes(path ?? "")) { request.resume(); return this.send(response, 404, { error: "Unknown Pair review endpoint." }); }
     if (request.method !== "POST") { request.resume(); return this.send(response, 405, { error: "Use POST for a review decision." }); }

@@ -51,3 +51,5 @@ This release supports local desktop workspaces. Remote SSH, WSL, containers and 
 No bundler or runtime packages are required. Run `npm test` in this folder for the client tests. Launch an Extension Development Host with `--extensionDevelopmentPath=<this folder>`. For isolated integration tests, `PI_PAIR_BRIDGE_DIR` overrides the default registry at `~/.pi/agent/pair-bridge`.
 
 The activation API exposes `getState()` (session ID, workspace, connection and cloned review, checkpoint and feedback; never credentials), `getReviewState()` (local draft anchors, pending batch, selected thread, native-thread count and desk-open state), and `refresh()` for diagnostic and integration testing. No API can bypass Pi's decision validation.
+
+Commands have numbered source lines, indented wrapping, and a separate live output pane in the Pair sidebar. Scroll back to pause following; choose **Follow output** to return to the tail. Output is text-only and bounded to 400 lines / 32 KiB per action. Open the command for the full native shell editor and inline questions. UI streaming does not add model context or change approval identity.

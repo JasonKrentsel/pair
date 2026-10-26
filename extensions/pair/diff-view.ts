@@ -124,8 +124,13 @@ export function renderChange(change: ChangePreview, theme: Theme, availableWidth
     const command = change.command ?? change.text ?? change.label;
     const cleanCommand = displaySource(command);
     const code = change.kind === "Result" ? cleanCommand.split("\n") : independentHighlightLines(highlightCode(cleanCommand, change.kind === "powershell" ? "powershell" : "bash"));
-    code.flatMap((line, index) => wrapped(paint(line, [], querySpans(cleanCommand.split("\n")[index] ?? "", options.query), "\x1b[49m", "\x1b[49m", searchColor))).forEach(append);
-    if (change.command && change.text && change.text !== command) wrapped(displaySource(change.text)).forEach(append);
+    if (change.command) append(theme.fg("muted", "Command · " + change.kind));
+    const indent = change.command && width > 8 ? "  " : "";
+    code.forEach((line, index) => wrapped(paint(line, [], querySpans(cleanCommand.split("\n")[index] ?? "", options.query), "\x1b[49m", "\x1b[49m", searchColor), width - indent.length).forEach((row, part) => append((part ? indent : "") + row)));
+    if (change.command && change.text && change.text !== command) {
+      append(""); append(theme.fg("muted", "Output"));
+      displaySource(stripTerminalSequences(change.text)).split("\n").flatMap(line => wrapped(line)).forEach(append);
+    }
     return result();
   }
   if (change.before === undefined || change.after === undefined) {

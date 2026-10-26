@@ -260,3 +260,25 @@ test("opening Pair before the first proposal focuses the connected empty view", 
     assert.equal(f.bridge.decide({ action: "approve" }), false);
   } finally { await f.close(); }
 });
+
+test("command progress is bounded and ephemeral without changing approval identity or feedback events", async () => {
+ const f=await fixture();
+ try {
+  const r=f.bridge.publish({title:"Check",why:"Verify",changes:[{label:"check",kind:"bash",command:"npm run check",added:0,removed:0}]},()=>{});
+  f.bridge.setCommandProgress(r.id,0,"Running","unapproved");
+  assert.equal(f.bridge.progress.length,0);
+  f.bridge.decide({action:"approve"});
+  const before=f.bridge.current, feedback=f.bridge.feedback;
+  const response=await f.request("/review"), etag=response.headers.get("etag")!;
+  f.bridge.setCommandProgress(r.id,0,"Running","\x1b[31m"+"line\n".repeat(500)+"</script>");
+  assert.equal(f.bridge.progress[0].truncated,true);
+  assert.equal(f.bridge.progress[0].text.includes("\x1b"),false);
+  assert.ok(f.bridge.progress[0].text.split("\n").length<=400);
+  assert.deepEqual(f.bridge.current,before);
+  assert.deepEqual(f.bridge.feedback,feedback);
+  assert.equal((await f.request("/review",{headers:{"if-none-match":etag}})).status,200);
+  f.bridge.publish(proposal(),()=>{});
+  f.bridge.setCommandProgress(r.id,0,"Completed","late");
+  assert.deepEqual(f.bridge.progress,[]);
+ } finally {await f.close();}
+});

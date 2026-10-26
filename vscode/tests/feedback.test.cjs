@@ -313,7 +313,7 @@ test('mixed step overview keeps files and commands in execution order with indiv
   assert.match(html, /Actions in execution order/);
   assert.ok(html.indexOf('1. src/answer.ts') < html.indexOf('2. bash command'));
   assert.ok(html.indexOf('2. bash command') < html.indexOf('3. src/index.ts'));
-  assert.match(html, /<pre>npm run check<\/pre>/);
+  assert.match(html, /<code>npm run check<\/code>/);
   assert.match(html, /Verify the new module before updating the caller/);
 });
 

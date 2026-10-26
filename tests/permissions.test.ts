@@ -90,3 +90,56 @@ test("compaction does not clear a denial within the same run", async () => {
     assert.equal(f.controller.guard({toolName:"pair_step",input:{}} as any),undefined);
   } finally { f.close(); }
 });
+
+test("command streams replace cumulative snapshots, ignore late updates and preserve final model output", async () => {
+  const f = fixture(() => ({action:"approve"}));
+  try {
+    f.ctx.tools.push({name:"bash"});
+    let callback: any;
+    f.ctx.executeTool = async (_name: string, _args: unknown, options: any) => {
+      callback = options.onUpdate;
+      callback({content:[{type:"text",text:"first\n"}]});
+      await new Promise(resolve => setTimeout(resolve,110));
+      callback({content:[{type:"text",text:"first\nsecond\n"}]});
+      return {isError:false,result:{content:[{type:"text",text:"first\nsecond\ncomplete"}]}};
+    };
+    const updates: any[] = [];
+    const result = await f.tool.execute("request",{title:"Check",why:"Verify",changes:[{tool:"bash",command:"npm run check"}]},undefined,(r: any)=>updates.push(structuredClone(r)),f.ctx);
+    const live = updates.filter(r=>r.details?.stream?.status==="Running");
+    assert.ok(live.some(r=>r.details.stream.text==="first\nsecond\n"));
+    assert.ok(live.every(r=>r.content[0].text==="Running approved step."));
+    assert.equal(result.details.changes[0].text,"first\nsecond\ncomplete");
+    assert.equal((result.content[0].text.match(/first/g)||[]).length,1);
+    const count = updates.length;
+    callback({content:[{type:"text",text:"late"}]});
+    assert.equal(updates.length,count);
+  } finally {f.close();}
+});
+
+test("command output cannot leak across session invalidation", async () => {
+  const f=fixture(()=>({action:"approve"}));
+  try {
+    f.ctx.tools.push({name:"bash"});
+    const updates:any[]=[];
+    f.ctx.executeTool=async (_name:string,_args:unknown,options:any)=>{
+      f.controller.invalidate();
+      options.onUpdate({content:[{type:"text",text:"stale-output-marker"}]});
+      return {isError:false,result:{content:[{type:"text",text:"done"}]}};
+    };
+    const result=await f.tool.execute("request",{title:"Check",why:"Verify",changes:[{tool:"bash",command:"npm run check"}]},undefined,(r:any)=>updates.push(structuredClone(r)),f.ctx);
+    assert.ok(!JSON.stringify(updates).includes("stale-output-marker"));
+    assert.equal(result.isError,true);
+  } finally {f.close();}
+});
+
+test("a thrown command keeps its last output and stops the next action",async()=>{
+ const f=fixture(()=>({action:"approve"}));
+ try{
+  f.ctx.tools.push({name:"bash"});let calls=0;
+  f.ctx.executeTool=async(_name:string,_args:unknown,options:any)=>{calls++;options.onUpdate({content:[{type:"text",text:"compiler diagnostic"}]});throw Error("process interrupted");};
+  const r=await f.run([{tool:"bash",command:"npm run check",why:"Verify"},{tool:"write",path:"later.ts",content:"x",why:"Follow up"}]);
+  assert.equal(calls,1);assert.equal(r.isError,true);
+  assert.match(r.details.changes[0].text,/compiler diagnostic\nError: process interrupted/);
+  assert.match(r.content[0].text,/compiler diagnostic/);
+ }finally{f.close();}
+});

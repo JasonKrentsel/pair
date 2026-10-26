@@ -73,7 +73,7 @@ test("terminal control characters in source are visible inert text", () => {
 test("command renders once and a short command needs no padding", () => {
   const rendered = renderChange({ label: "git status --short", kind: "bash", command: "git status --short", cwd: "C:\\demo", added: 0, removed: 0 }, theme, 80);
   assert.equal((readable(rendered.lines).match(/git status --short/g) ?? []).length, 1);
-  assert.equal(rendered.lines.length, 2);
+  assert.equal(rendered.lines.length, 3);
 });
 
 test("newline and BOM changes remain explicit, while snapshots remain byte-exact", () => {

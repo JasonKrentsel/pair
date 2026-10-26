@@ -148,3 +148,5 @@ Highlighting, navigation, search and editor handoff are local operations. A stab
 
 `pair_work` results contain the action outcome, design path/revision/approval, and relevant status facts. They do not repeat the permission instructions or return the full design to the model; the published Markdown remains available in the UI.
 
+
+Command review (0.7): exact commands use numbered lines and indented visual wrapping. VS Code shows a separate live output tail with a Follow output toggle; Pi shows the latest eight display rows. Output updates are display-only: no extra model calls, feedback events, or approved-snapshot changes. The live pane keeps at most 400 lines / 32 KiB per action and follows native tool buffering; final native tool output remains in the conversation.

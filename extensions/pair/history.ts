@@ -15,6 +15,7 @@ export interface StepDetails {
   changes?: ChangePreview[];
   proposed?: ChangePreview[];
   output?: string;
+  stream?: { status: string; text: string; truncated: boolean };
   reviewId?: string;
   revises?: string;
   /** Legacy saved results contain a unified patch rather than display diffs. */
@@ -83,7 +84,17 @@ export function renderStepCall(args: unknown, theme: Theme, context: RenderConte
 }
 
 export function renderStepResult(result: AgentToolResult<unknown>, { expanded, isPartial }: ToolRenderResultOptions, theme: Theme, context: RenderContext): Component {
-  if (isPartial) return bounded(context, (width) => wrapTextWithAnsi(theme.fg("muted", plain(text(record(result.details)?.status) ?? "Preparing step")), width));
+  if (isPartial) return bounded(context, (width) => {
+    const data = record(result.details), stream = record(data?.stream);
+    const lines = wrapTextWithAnsi(theme.fg("muted", plain(text(data?.status) ?? "Preparing step")), width);
+    if (stream) {
+      lines.push(theme.fg("accent", "Output · " + plain(stream.status)));
+      const output = plain(stream.text).split("\n").flatMap(line => wrapTextWithAnsi(line, width));
+      lines.push(...(stream.text ? output.slice(-8) : [theme.fg("dim", "Waiting for output…")]));
+      if (output.length > 8 || stream.truncated) lines.push(theme.fg("dim", "Latest output · more in VS Code"));
+    }
+    return lines;
+  });
   const details = normalizeStepDetails(result.details, result.content, context.isError);
   return bounded(context, (width) => {
     const lines: string[] = [];

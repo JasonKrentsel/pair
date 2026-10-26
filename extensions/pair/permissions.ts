@@ -1,4 +1,5 @@
 import { type AgentToolResult, type ExtensionAPI, type ExtensionContext, type ToolCallEvent } from "@earendil-works/pi-coding-agent";
+import { outputTail } from "./command-output.ts";
 import { Type } from "typebox";
 import { snapshot, projectRoot } from "./files.ts";
 import { ChangeSchema, assertUnchanged, filePreview, prepareChanges } from "./changes.ts";
@@ -256,18 +257,36 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
       pi.appendEntry("pair-step-v1", { title: details.title, status: "Approved once", files: previews.map((preview) => preview.label), why: details.why });
       for (let index = 0; index < prepared.length; index++) {
         const change = prepared[index];
+        let acceptingOutput = true, streamed = "", lastUpdate = 0;
+        const publishOutput = (status: "Running" | "Completed" | "Failed", value: string) => {
+          if (requestGeneration !== generation) return;
+          streamed = value;
+          if (details.reviewId) bridge?.setCommandProgress(details.reviewId, index, status, value);
+          latest = { ...latest!, stream: { status, ...outputTail(value) } };
+          update?.({ content: [{ type: "text", text: "Running approved step." }], details: latest });
+        };
         try {
           signal?.throwIfAborted();
           if (requestGeneration !== generation) throw new Error("The session changed; remaining actions were not run.");
           assertUnchanged(root, prepared.slice(index));
-          latest = { ...details, status: `Applying ${index + 1}/${prepared.length} · ${change.preview.label}`, changes: completed };
+          completed[index] = { ...change.preview, status: "Running" };
+          latest = { ...details, status: `Applying ${index + 1}/${prepared.length} · ${change.path ? change.preview.label : change.tool + " command"}`, changes: completed };
           bridge?.update(latest.status, completed);
           update?.({ content: [{ type: "text", text: "Running approved step." }], details: latest });
           permits.set(id, { tool: change.tool, input: canonical(change.input), root, path: change.path, hash: change.before?.hash });
-          const outcome = await ctx.executeTool(change.tool, change.input, { signal });
+          if (!change.path) publishOutput("Running", "");
+          const outcome = await ctx.executeTool(change.tool, change.input, { signal, onUpdate: !change.path ? partial => {
+            if (!acceptingOutput || requestGeneration !== generation) return;
+            streamed = partial.content.filter(item => item.type === "text").map(item => item.text).join("\n");
+            if (Date.now() - lastUpdate < 100) return;
+            lastUpdate = Date.now();
+            publishOutput("Running", streamed);
+          } : undefined });
+          acceptingOutput = false;
           if (requestGeneration !== generation) throw new Error("The session changed while this action ran. Inspect its files; remaining actions were not run.");
           terminate = Boolean(outcome.result.terminate);
           const output = outcome.result.content.filter((item) => item.type === "text").map((item) => item.text).join("\n");
+          if (!change.path) publishOutput(outcome.isError ? "Failed" : "Completed", output);
           outputs.push(`${change.preview.label}:\n${output}`);
           let actual = change.preview;
           if (change.path) {
@@ -275,22 +294,25 @@ export function registerStepPermissions(pi: ExtensionAPI, options: {
             actual = { ...filePreview(change.path, change.before?.text ?? "", after.text ?? "", change.preview.kind), why: change.preview.why, annotations: change.preview.annotations };
             // Other hooks may change/reject an edit. Stop if the actual file differs from the reviewed result.
             if (!outcome.isError && after.text !== change.after) throw new Error(`The actual result in ${change.path} differs from the reviewed change. Inspect before proceeding.`);
-          } else actual = { ...change.preview, text: [change.preview.text, output].filter(Boolean).join("\n\n") };
+          } else actual = { ...change.preview, text: output };
           failed = outcome.isError;
           completed[index] = { ...actual, status: failed ? "Failed — inspect result" : change.path ? "Applied" : "Completed" };
           if (!failed) applied++;
           if (failed || terminate) break;
         } catch (error) {
+          acceptingOutput = false;
+          if (!change.path) publishOutput("Failed", [streamed, String(error)].filter(Boolean).join("\n"));
           failed = true;
-          outputs.push(`${change.preview.label}: ${String(error)}`);
-          let actual: ChangePreview = { ...change.preview, diff: undefined, text: String(error), added: 0, removed: 0 };
+          const failureOutput = !change.path ? [outputTail(streamed).text, String(error)].filter(Boolean).join("\n") : String(error);
+          outputs.push(`${change.preview.label}: ${failureOutput}`);
+          let actual: ChangePreview = { ...change.preview, diff: undefined, text: failureOutput, added: 0, removed: 0 };
           if (change.path) {
             try { actual = { ...filePreview(change.path, change.before?.text ?? "", snapshot(root, change.path).text ?? "", change.preview.kind), text: String(error) }; }
             catch { /* Keep the error visible when even the current file cannot be read. */ }
           }
           completed[index] = { ...actual, status: "Stopped — inspect result" };
           break;
-        } finally { permits.delete(id); }
+        } finally { acceptingOutput = false; permits.delete(id); }
       }
       if (requestGeneration === generation) options.changed(ctx, completed);
       const stopped = terminate && applied < prepared.length;
