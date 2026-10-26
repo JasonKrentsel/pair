@@ -207,3 +207,34 @@ test('saved local state and protocol reject malformed drafts, ranges and annotat
   const restored = loadLocalState({ version: 1, scopes: [{ key: 'scope', drafts: [{ ...draft, startLine: -1 }, draft], submission: { batchId: 'bad', comments: [] } }] });
   assert.equal(restored.scopes[0].drafts.length, 1); assert.equal(restored.scopes[0].submission, undefined);
 });
+
+test('Review Desk shows the proposal before any comments and distinguishes completed and disconnected states', () => {
+  const review = proposal();
+  const options = { review, feedback: { version: 1, revision: 0, scopeId: 'scope', reviews: [], threads: [] }, connected: true, trusted: true };
+  const pending = renderDesk(options);
+  assert.match(pending, /Ready for your review/);
+  assert.match(pending, /Files in this change/);
+  assert.match(pending, /data-action="open-file" data-index="0"/);
+  assert.match(pending, /layout overview/);
+  assert.ok(!pending.includes('Send 0 draft comments'));
+  const done = renderDesk({ ...options, review: { ...review, pending: false, status: 'Applied' } });
+  assert.match(done, /Latest change · Applied/);
+  assert.match(done, /before approving it/);
+  const disconnected = renderDesk({ ...options, connected: false, errorMessage: 'Pi listener closed' });
+  assert.match(disconnected, /Pi listener closed/);
+  assert.match(disconnected, /data-action="refresh">Reconnect/);
+});
+
+test('proposals without per-file explanations still show a clearly labeled expanded overview inline', () => {
+  const f = fixture();
+  try {
+    delete f.state.review.changes[0].why;
+    delete f.state.review.changes[0].annotations;
+    f.makeDocument();
+    const overview = f.native.find(thread => /whole proposal/.test(thread.label));
+    assert.ok(overview);
+    assert.equal(overview.comments[0].body.value, f.state.review.why);
+    assert.equal(overview.collapsibleState, f.vscode.CommentThreadCollapsibleState.Expanded);
+    assert.equal(f.requests.length, 0);
+  } finally { f.close(); }
+});

@@ -36,7 +36,7 @@ Use the canonical pair_step shape:
 
 Every entry needs its own tool and applicable path or command. Use 1–4 distinct files, up to 10 replacements per edit entry, or one standalone bash/powershell command. Combine replacements for the same file. Keep why to purpose, mechanics, and meaningful choices, usually one to three sentences. Do not repeat it in a separate message.
 
-Use Markdown in why: inline code for names, short fenced examples when useful. An entry can have its own why and optional annotations [{title, why, startLine, endLine}] tied to one-based lines in the proposed file or command. Explain a consequential function or choice where the human is reviewing it; do not annotate obvious lines or restate the code.
+Use Markdown in why: inline code for names, short fenced examples when useful. Give each file entry its own concise why. For nontrivial functions or behavior changes, include annotations [{title, why, startLine, endLine}] tied to one-based lines in the proposed file or command. Explain a consequential function or choice where the human is reviewing it; do not annotate obvious lines or restate the code.
 
 ## Respect the decision
 

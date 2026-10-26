@@ -16,6 +16,8 @@ async function fixture() {
   let choice = async items => items[0];
   let memory = { revision: 0, constraints: [] };
   let review = null;
+  let available = [session];
+  const polls = [];
   const vscode = {
     EventEmitter: class { event = event; fire() {} dispose() {} },
     StatusBarAlignment: { Left: 1 },
@@ -32,7 +34,7 @@ async function fixture() {
   };
   const filename = path.resolve(__dirname, '../extension.cjs');
   const nativeRequire = createRequire(filename);
-  const client = { ...nativeRequire('./client.cjs'), discoverSessions: async () => [session], request: async (_session, method, route, body) => {
+  const client = { ...nativeRequire('./client.cjs'), discoverSessions: async () => available, request: async (_session, method, route, body) => {
     if (method === 'POST') {
       requests.push({ session: _session, route, body });
       assert.equal(route, '/memory');
@@ -42,7 +44,10 @@ async function fixture() {
         : memory.constraints.filter(value => value.id !== body.id) };
       return { data: { accepted: true } };
     }
-    return { data: { version: 1, sessionId: session.sessionId, root, review: structuredClone(review), memory: structuredClone(memory) }, etag: String(memory.revision) };
+    polls.push(_session.sessionId);
+    const live = available.find(value => value.sessionId === _session.sessionId);
+    if (!live) throw new Error('Old Pi listener closed');
+    return { data: { version: 1, sessionId: live.sessionId, root, review: structuredClone(review), memory: structuredClone(memory) }, etag: String(memory.revision) };
   } };
   const module = { exports: {} };
   const sandbox = { module, exports: module.exports, require(name) { return name === 'vscode' ? vscode : name === './client.cjs' ? client : nativeRequire(name); },
@@ -56,7 +61,7 @@ async function fixture() {
     const view = { webview: { options: {}, get html() { return html; }, set html(value) { html = value; webviewWrites.set(id, (webviewWrites.get(id) || 0) + 1); }, onDidReceiveMessage: event }, onDidDispose: event };
     views.get(id).resolveWebviewView(view);
   }
-  return { api, commands, requests, executed, warnings, webviewWrites, vscode, setInput(fn) { input = fn; }, setChoice(fn) { choice = fn; },
+  return { session, polls, setSessions(values) { available = values; }, api, commands, requests, executed, warnings, webviewWrites, vscode, setInput(fn) { input = fn; }, setChoice(fn) { choice = fn; },
     setMemory(value) { memory = value; }, setReview(value) { review = value; }, close() { for (const sub of context.subscriptions) sub.dispose(); } };
 }
 
@@ -117,5 +122,33 @@ test('checkpoint-only refresh repaints its panel without resetting the review or
     await f.api.refresh();
     assert.equal(f.webviewWrites.get('pair.checkpoint'), checkpointWrites + 1, 'unchanged polling preserves checkpoint scroll and focus');
     assert.ok(!f.executed.some(([name]) => name === 'vscode.diff'));
+  } finally { f.close(); }
+});
+
+test('Pi reload reconnects to the sole replacement session without polling the retired listener', async () => {
+  const f = await fixture();
+  try {
+    const oldCount = f.polls.length;
+    f.setSessions([{ ...f.session, sessionId: 'reloaded-session', port: 2 }]);
+    await f.api.refresh();
+    assert.equal(f.api.getState().connected, true);
+    assert.equal(f.api.getState().sessionId, 'reloaded-session');
+    assert.deepEqual(f.polls.slice(oldCount), ['reloaded-session']);
+    assert.equal(f.requests.length, 0);
+  } finally { f.close(); }
+});
+
+test('missing or ambiguous replacement sessions report a connection problem without choosing or approving', async () => {
+  const f = await fixture();
+  try {
+    f.setSessions([]);
+    await f.api.refresh();
+    assert.equal(f.api.getState().connected, false);
+    assert.match(f.api.getState().connectionError, /disconnected/);
+    f.setSessions([{ ...f.session, sessionId: 'one' }, { ...f.session, sessionId: 'two' }]);
+    await f.api.refresh();
+    assert.equal(f.api.getState().connected, false);
+    assert.match(f.api.getState().connectionError, /Select the conversation/);
+    assert.equal(f.requests.length, 0);
   } finally { f.close(); }
 });

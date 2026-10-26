@@ -1,4 +1,5 @@
 'use strict';
+const VERSION = require('./package.json').version;
 const vscode = require('vscode');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -54,7 +55,7 @@ function activate(context) {
   const canDecide = () => connected && !busy && !memoryBusy && matchesWorkspace(selected) && review?.pending && vscode.workspace.isTrusted;
   const canApprove = () => canDecide() && !dirtyFiles().length && !alteredSnapshots().length && !feedbackController?.blocksApproval();
   const canEditMemory = () => connected && !busy && !memoryBusy && matchesWorkspace(selected) && memory !== undefined && vscode.workspace.isTrusted;
-  const liveState = () => ({ sessionId: selected?.sessionId, root: selected?.root, connected, review, memory, feedback });
+  const liveState = () => ({ sessionId: selected?.sessionId, root: selected?.root, connected, review, memory, feedback, connectionError: errorMessage });
   const state = () => structuredClone(liveState());
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 15);
   status.command = 'pair.review';
@@ -111,7 +112,7 @@ function activate(context) {
       body{padding:12px 16px;margin:0;color:var(--vscode-foreground);font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);line-height:1.5}h2{font-size:1.08em;margin:6px 0 10px;font-weight:600}.status{color:var(--vscode-descriptionForeground);font-size:.92em}.why{white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 14px}.muted{color:var(--vscode-descriptionForeground);font-size:.92em}.warning{color:var(--vscode-editorWarning-foreground);margin:12px 0}.actions{display:flex;flex-wrap:wrap;gap:8px;padding:4px 0 10px;position:sticky;top:0;background:var(--vscode-sideBar-background)}button{border:1px solid transparent;border-radius:2px;padding:6px 10px;font:inherit;cursor:pointer;background:var(--vscode-button-background);color:var(--vscode-button-foreground)}button:hover{background:var(--vscode-button-hoverBackground)}button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:2px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--vscode-editor-font-family);font-size:var(--vscode-editor-font-size);background:var(--vscode-textCodeBlock-background);padding:8px}.command{margin:12px 0}.scope{margin-top:10px}.empty{margin-top:12px}
       .review-controls{position:sticky;top:0;z-index:1;background:var(--vscode-sideBar-background);padding-top:4px}.review-controls .actions{position:static}.review-controls .feedback-summary{margin:2px 0 10px;padding-top:0;border:0}.review-controls h3{margin:4px 0}.review-controls p{margin:0 0 8px}.scope{margin-bottom:12px}
       </style></head><body>
-      <div class="status">${escape(selected ? `${path.basename(selected.root)} · ${selected.sessionId.slice(0, 8)}` : 'Pair for Pi')} ${connected ? '' : '· disconnected'}</div>
+      <div class="status">Pair ${escape(VERSION)} · ${escape(selected ? `${path.basename(selected.root)} · ${selected.sessionId.slice(0, 8)}` : 'Pair for Pi')} ${connected ? '' : '· disconnected'}</div>
       ${review ? `<h2>${escape(review.title)}</h2><div class="status">${escape(review.status)} · ${count} ${count === 1 ? 'action' : 'actions'}</div>
         <div class="review-controls"><div class="actions"><button data-action="approve" ${approveDisabled}>${escape(actionLabel)}</button><button class="secondary" data-action="deny" ${disabled}>Deny</button><button class="secondary" data-action="note" ${disabled}>Deny with note</button></div>${feedbackController?.sidebar('controls') || ''}</div>
         <div class="why">${markdown(review.why)}</div>${commands}<div class="muted scope">Approval covers the complete change.</div>`
@@ -195,6 +196,17 @@ function activate(context) {
         if (selected) {
           const registered = sessions.find(item => item.sessionId === selected.sessionId && canonicalRoot(item.root) === canonicalRoot(selected.root));
           if (registered) selected = registered;
+          else {
+            const replacements = sessions.filter(item => canonicalRoot(item.root) === canonicalRoot(selected.root));
+            if (replacements.length === 1) {
+              selected = replacements[0]; review = undefined; memory = undefined; feedback = undefined;
+              connected = false; etag = undefined; autoOpened = undefined;
+            } else {
+              connected = false; etag = undefined;
+              errorMessage = replacements.length > 1 ? 'Pi restarted. Select the conversation to reconnect.' : 'Pi is disconnected. Start Pi in this folder or use /pair code.';
+              update(); return;
+            }
+          }
         }
       }
       if (!selected || !matchesWorkspace(selected)) { connected = false; update(); return; }
@@ -444,7 +456,7 @@ function activate(context) {
     try { return await callback(...args); } catch (error) { showError(error); throw error; }
   }));
   feedbackController = createFeedbackController(vscode, context, { getState: liveState, getSession: () => selected && { ...selected }, matchesWorkspace: () => matchesWorkspace(selected), request,
-    refresh: () => refresh(true), onChanged: update, alteredSnapshots, openSnapshot, openCurrent: openChange, showError });
+    refresh: () => refresh(true), onChanged: update, alteredSnapshots, openSnapshot, openCurrent: openChange, chooseSession, showError });
   register('pair.reviewDesk', () => feedbackController.openDesk());
   register('pair.addAskFeedback', input => feedbackController.addFeedback('ask', input));
   register('pair.addRevisionFeedback', input => feedbackController.addFeedback('revise', input));

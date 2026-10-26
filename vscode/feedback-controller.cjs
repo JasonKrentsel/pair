@@ -183,10 +183,11 @@ function createFeedbackController(vscode, context, options) {
           pairId: item.id, contextValue: item.status === 'draft' ? 'pairDraft' : 'pairSubmitted', state: item.status === 'addressed' ? vscode.CommentThreadState?.Resolved : vscode.CommentThreadState?.Unresolved });
       }
       if (info.side === 'proposed' && sameReview(state.review, identity(info.review))) {
-        const notes = [...(change.why ? [{ title: 'Why this file changes', why: change.why, startLine: 1, endLine: 1 }] : []), ...(change.annotations || [])];
+        const explanation = change.why || info.review.why;
+        const notes = [...(explanation ? [{ title: change.why ? 'Why this file changes' : 'Change overview · applies to the whole proposal', why: explanation, startLine: 1, endLine: 1 }] : []), ...(change.annotations || [])];
         for (const [index, note] of notes.entries()) {
           if (!Number.isInteger(note.startLine) || !Number.isInteger(note.endLine) || note.startLine < 1 || note.endLine > sourceLines(change.after).length || note.endLine < note.startLine) continue;
-          desired.set(uri + ':explanation:' + index, { uri: info.uri, range: new vscode.Range(note.startLine - 1, 0, note.endLine - 1, 0), label: note.title || 'Why these lines?', comments: [nativeComment(note.why, 'Pi', 'Explanation')], contextValue: 'pairExplanation' });
+          desired.set(uri + ':explanation:' + index, { uri: info.uri, range: new vscode.Range(note.startLine - 1, 0, note.endLine - 1, 0), label: note.title || 'Why these lines?', comments: [nativeComment(note.why, 'Pi', 'Explanation')], contextValue: 'pairExplanation', expand: index === 0 });
         }
       }
     }
@@ -199,12 +200,12 @@ function createFeedbackController(vscode, context, options) {
       thread.label = value.label; thread.contextValue = value.contextValue; thread.pairId = value.pairId; thread.canReply = false;
       if (existing) thread.comments = value.comments;
       if (value.state !== undefined) thread.state = value.state;
-      if (!existing) thread.collapsibleState = value.contextValue === 'pairDraft' ? vscode.CommentThreadCollapsibleState.Expanded : vscode.CommentThreadCollapsibleState.Collapsed;
+      if (!existing) thread.collapsibleState = value.contextValue === 'pairDraft' || value.expand ? vscode.CommentThreadCollapsibleState.Expanded : vscode.CommentThreadCollapsibleState.Collapsed;
       nativeThreads.set(key, { signature, thread });
     }
   }
 
-  function deskOptions() { const state = options.getState(); return { ...state, drafts: renderedDrafts(), threads: threads(), selectedId: selectedThreadId, trusted: vscode.workspace.isTrusted, busy, submission: scope()?.submission, errorMessage: lastError }; }
+  function deskOptions() { const state = options.getState(); return { ...state, drafts: renderedDrafts(), threads: threads(), selectedId: selectedThreadId, trusted: vscode.workspace.isTrusted, busy, submission: scope()?.submission, errorMessage: lastError || state.connectionError || '' }; }
   function syncDesk(force = false, top = false) {
     if (!desk) return;
     const value = deskOptions();
@@ -231,11 +232,16 @@ function createFeedbackController(vscode, context, options) {
     desk.webview.onDidReceiveMessage(message => {
       if (!message || typeof message !== 'object') return;
       const state = options.getState();
+      if (message.action === 'refresh') return void options.refresh().catch(options.showError);
+      if (message.action === 'session') return void options.chooseSession?.().catch(options.showError);
       if (message.scopeId !== state.feedback?.scopeId) return options.showError(new Error('The Pi conversation changed. Reopen Review Desk.'));
       const run = async () => {
         if (message.action === 'select') { selectedThreadId = message.id; syncDesk(true, true); }
         else if (message.action === 'open' || message.action === 'compare') await openFeedback({ id: message.id, compare: message.action === 'compare' });
-        else if (message.action === 'open-current') await options.openCurrent();
+        else if (message.action === 'open-current' || message.action === 'open-file') {
+          if (!sameReview(state.review, message.reviewIdentity)) throw new Error('The proposal changed. Open its current file list.');
+          await options.openCurrent(message.action === 'open-file' ? Number(message.index) : undefined);
+        }
         else if (message.action === 'send') {
           if (message.revision !== state.feedback?.revision) throw new Error('The review changed. Check the current feedback before sending.');
           await sendFeedback();
