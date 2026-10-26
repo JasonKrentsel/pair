@@ -1,6 +1,6 @@
 /* Only loaded by the browser fixture adapter; VS Code supplies its own tokens. */
 :root[data-preview-theme] {
-  --vscode-font-family: 'Segoe UI', system-ui, sans-serif;
+  --vscode-font-family: system-ui, sans-serif;
   --vscode-font-size: 13px;
   --vscode-editor-font-family: Consolas, 'Courier New', monospace;
   --vscode-editor-font-size: 13px;

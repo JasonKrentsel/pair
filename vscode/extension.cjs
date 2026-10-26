@@ -76,6 +76,79 @@ function activate(context) {
       editor.setDecorations(scopeDecoration,matches ? [new vscode.Range(scope.startLine-1,0,(scope.endLine || scope.startLine)-1,Number.MAX_SAFE_INTEGER)] : []);
     }
   }
+  // Section inspection is local editor presentation. It never changes the
+  // pending action, conversation scope, or the decision identity.
+  const sectionDecoration = vscode.window.createTextEditorDecorationType?.({
+    isWholeLine:true,
+    backgroundColor:new vscode.ThemeColor('editor.rangeHighlightBackground'),
+    borderWidth:'0 0 0 2px',borderStyle:'solid',borderColor:new vscode.ThemeColor('editorInfo.foreground'),
+    overviewRulerColor:new vscode.ThemeColor('editorInfo.foreground'),
+    overviewRulerLane:vscode.OverviewRulerLane?.Left,
+  });
+  if(sectionDecoration)context.subscriptions.push(sectionDecoration);
+  let highlightedSection;
+  let decoratedSection;
+  const sectionKey = message => JSON.stringify([selected?.sessionId,message.identity?.reviewId,message.identity?.revision,message.identity?.fingerprint,message.identity?.gate??1,message.index,message.annotationIndex]);
+  function resolveSection(message) {
+    if(!reviewView || !connected || !selected || !matchesWorkspace(selected) || !sameDecision(review,message.identity)
+      || !Number.isInteger(message.index) || !Number.isInteger(message.annotationIndex))return;
+    const change=review.changes[message.index],annotation=change?.annotations?.[message.annotationIndex];
+    const content=change?.after ?? change?.command;
+    const startLine=annotation?.startLine,endLine=annotation?.endLine ?? startLine;
+    if(typeof content!=='string' || !Number.isInteger(startLine) || !Number.isInteger(endLine)
+      || startLine<1 || endLine<startLine || endLine>content.split(/\r\n|\r|\n/).length)return;
+    return {key:sectionKey(message),sessionId:selected.sessionId,identity:decisionIdentity(review),index:message.index,annotationIndex:message.annotationIndex,startLine,endLine};
+  }
+  function currentSection(section) {
+    if(!section || section.sessionId!==selected?.sessionId)return false;
+    const current=resolveSection(section);
+    return current?.key===section.key && current.startLine===section.startLine && current.endLine===section.endLine;
+  }
+  function sectionEditors(section) {
+    return (vscode.window.visibleTextEditors || []).filter(editor=>{
+      const target=documentTargets.get(editor.document.uri.toString());
+      return target?.sessionId===section.sessionId && target.index===section.index
+        && ['proposed','command'].includes(target.side) && sameReview(review,target.identity)
+        && documents.get(editor.document.uri.toString())===editor.document.getText();
+    });
+  }
+  function updateSectionDecoration(force=false) {
+    if(!sectionDecoration)return;
+    if(!currentSection(highlightedSection))highlightedSection=undefined;
+    const key=highlightedSection?.key || '';
+    if(!force && decoratedSection===key)return;
+    decoratedSection=key;
+    const editors=highlightedSection ? new Set(sectionEditors(highlightedSection)) : new Set();
+    for(const editor of vscode.window.visibleTextEditors || []) {
+      editor.setDecorations(sectionDecoration,editors.has(editor)
+        ? [new vscode.Range(highlightedSection.startLine-1,0,highlightedSection.endLine-1,Number.MAX_SAFE_INTEGER)] : []);
+    }
+  }
+  function clearSectionDecoration() {
+    highlightedSection=undefined;
+    updateSectionDecoration(true);
+  }
+  async function handleSectionMessage(message) {
+    if(message.action==='section-hover' && message.active===false) {
+      // Moving A -> B may deliver A's leave after B's enter. Only its own leave
+      // may clear the active section.
+      if(highlightedSection?.key===sectionKey(message))clearSectionDecoration();
+      return;
+    }
+    if(message.action==='section-hover' && message.active!==true)return;
+    const section=resolveSection(message);
+    if(!section) { if(!currentSection(highlightedSection))clearSectionDecoration(); return; }
+    highlightedSection=section;
+    updateSectionDecoration(true);
+    if(message.action!=='section-reveal')return;
+    selectedIndex=section.index;
+    update();
+    if(!sectionEditors(section).length)await openSnapshot(structuredClone(review),section.index,{native:true,preserveFocus:true,stillCurrent:()=>currentSection(section)});
+    if(!currentSection(section))return;
+    const range=new vscode.Range(section.startLine-1,0,section.endLine-1,Number.MAX_SAFE_INTEGER);
+    for(const editor of sectionEditors(section))editor.revealRange?.(range,vscode.TextEditorRevealType?.InCenterIfOutsideViewport);
+    updateSectionDecoration(true);
+  }
   const canDiscuss = () => connected && !busy && !conversationBusy && conversationAvailable && review?.pending && matchesWorkspace(selected) && vscode.workspace.isTrusted;
   // Only presentation data crosses the webview boundary. Bridge credentials,
   // ports, command output streams and session discovery records stay in the host.
@@ -100,6 +173,7 @@ function activate(context) {
     if (disposed) return;
     commandCenter?.sync();
     updateScopeDecoration();
+    updateSectionDecoration();
     void vscode.commands.executeCommand('setContext', 'pair.canDiscuss', !!canDiscuss()).then(undefined, () => {});
     void vscode.commands.executeCommand('setContext', 'pair.canDecide', !!canDecide()).then(undefined, () => {});
     void vscode.commands.executeCommand('setContext', 'pair.canApprove', !!canApprove()).then(undefined, () => {});
@@ -118,12 +192,14 @@ function activate(context) {
   }));
   context.subscriptions.push(vscode.window.registerWebviewViewProvider('pair.review', {
     resolveWebviewView(view) {
+      clearSectionDecoration();
       reviewView = view;
       view.webview.options = { enableScripts: true, localResourceRoots: context.extensionUri ? [vscode.Uri.joinPath(context.extensionUri,'media')] : [] };
       displayedState = undefined;
       view.webview.onDidReceiveMessage(message => {
         if (!message || typeof message !== 'object') return;
         if (message.action === 'webview-ready') { publishWebviewState(true); return; }
+        if (message.action === 'section-hover' || message.action === 'section-reveal') { void handleSectionMessage(message).catch(showError); return; }
         if (message.action?.startsWith('conversation-')) { void handleConversationMessage(message).catch(error => { void reviewView?.webview.postMessage?.({type:'action-conversation-error',id:message.conversationId,text:error.message}); }); return; }
         if (message.action === 'chat-action') { void openActionConversation({index:message.index,identity:message.identity,conversationId:message.conversationId}).catch(showError); return; }
         if (message.action === 'session') return void chooseSession().catch(showError);
@@ -137,7 +213,8 @@ function activate(context) {
       const assets = Object.fromEntries(['app.js','app.css'].map(name => [name, context.extensionUri && view.webview.asWebviewUri
         ? view.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri,'media','ui',name)).toString() : 'media/ui/'+name]));
       view.webview.html = renderWebview({state:webviewState(),assets,cspSource:view.webview.cspSource});
-      view.onDidDispose(() => { if (reviewView === view) { reviewView = undefined; displayedState = undefined; } }, undefined, context.subscriptions);
+      view.onDidDispose(() => { if (reviewView === view) { reviewView = undefined; displayedState = undefined; clearSectionDecoration(); } }, undefined, context.subscriptions);
+      if(view.onDidChangeVisibility)context.subscriptions.push(view.onDidChangeVisibility(()=>{if(!view.visible)clearSectionDecoration();}));
     }
   }));
   function showError(error) { void vscode.window.showWarningMessage(error instanceof Error ? error.message : String(error)); }
@@ -165,7 +242,7 @@ function activate(context) {
           .sort((left, right) => right.focusRequestedAt - left.focusRequestedAt)[0];
         if (requested) {
           latestFocusTime = requested.focusRequestedAt;
-          if (selected?.sessionId !== requested.sessionId) { selected = requested; review = undefined; connected = false; etag = undefined; }
+          if (selected?.sessionId !== requested.sessionId) { clearSectionDecoration(); selected = requested; review = undefined; connected = false; etag = undefined; }
         }
         if (!selected && sessions.length === 1) { selected = sessions[0]; etag = undefined; }
         if (selected) {
@@ -174,6 +251,7 @@ function activate(context) {
           else {
             const replacements = sessions.filter(item => canonicalRoot(item.root) === canonicalRoot(selected.root));
             if (replacements.length === 1) {
+              clearSectionDecoration();
               selected = replacements[0]; review = undefined;
               connected = false; etag = undefined; autoOpened = undefined;
             } else {
@@ -234,6 +312,7 @@ function activate(context) {
     if (!sessions.length) { await vscode.window.showInformationMessage('No Pair session matches this workspace. Start Pi in this folder and reload Pair.'); return; }
     const choice = await vscode.window.showQuickPick(sessions.map(session => ({ label: `${path.basename(session.root)} · ${session.sessionId.slice(0, 8)}`, description: session.root, detail: `Pi process ${session.pid}`, session })), { title: 'Select the Pi session to review', placeHolder: 'Only sessions for this workspace are shown' });
     if (!choice) return;
+    clearSectionDecoration();
     selected = choice.session;
     review = undefined;
     connected = false;
@@ -306,7 +385,8 @@ function activate(context) {
         await vscode.languages.setTextDocumentLanguage(beforeDoc, language);
         await vscode.languages.setTextDocumentLanguage(afterDoc, language);
       }
-      await vscode.commands.executeCommand('vscode.diff', left, right, `${change.label} — Before ↔ Proposed`, { preview: true, preserveFocus: false, ...(vscode.ViewColumn ? { viewColumn: vscode.ViewColumn.Active } : {}) });
+      if(options.stillCurrent && !options.stillCurrent())return;
+      await vscode.commands.executeCommand('vscode.diff', left, right, `${change.label} — Before ↔ Proposed`, { preview: true, preserveFocus: options.preserveFocus===true, ...(vscode.ViewColumn ? { viewColumn: vscode.ViewColumn.Active } : {}) });
     } else {
       const command = change.command !== undefined;
       const content = command ? change.command : change.text || change.diff || 'No complete file snapshot was recorded for this result.';
@@ -315,7 +395,8 @@ function activate(context) {
       const document = await vscode.workspace.openTextDocument(uri);
       const language = /powershell/i.test(change.kind) ? 'powershell' : 'shellscript';
       if (command && (await vscode.languages.getLanguages()).includes(language)) await vscode.languages.setTextDocumentLanguage(document, language);
-      await vscode.window.showTextDocument(document, { preview: true, preserveFocus: false, ...(vscode.ViewColumn ? { viewColumn: vscode.ViewColumn.Active } : {}) });
+      if(options.stillCurrent && !options.stillCurrent())return;
+      await vscode.window.showTextDocument(document, { preview: true, preserveFocus: options.preserveFocus===true, ...(vscode.ViewColumn ? { viewColumn: vscode.ViewColumn.Active } : {}) });
     }
     pruneSnapshots();
   }
@@ -495,6 +576,7 @@ function activate(context) {
         sessions = await discoverSessions(roots());
         const target = sessions.find(session => session.sessionId === sessionId && canonicalRoot(session.root) === canonicalRoot(requestedRoot));
         if (!target) throw new Error('That Pi session is no longer available. Refresh Pair or select its active session.');
+        clearSectionDecoration();
         selected = target;
         review = undefined;
         connected = false;
@@ -506,12 +588,12 @@ function activate(context) {
   }));
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => { connected = false; update(); void refresh(true).catch(showError); }));
   context.subscriptions.push(vscode.workspace.onDidGrantWorkspaceTrust(update));
-  if(vscode.window.onDidChangeVisibleTextEditors)context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(()=>updateScopeDecoration(true)));
-  context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(event => { if (['file', SCHEME].includes(event.document.uri.scheme)) update(); }));
+  if(vscode.window.onDidChangeVisibleTextEditors)context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(()=>{updateScopeDecoration(true);updateSectionDecoration(true);}));
+  context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(event => { if (['file', SCHEME].includes(event.document.uri.scheme)) { update(); if(event.document.uri.scheme===SCHEME)updateSectionDecoration(true); } }));
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(update));
   context.subscriptions.push(vscode.workspace.onDidCloseTextDocument(document => { if (document.uri.scheme === 'file') update(); pruneSnapshots(); }));
   const interval = setInterval(() => { void refresh().catch(error => { connected = false; errorMessage = error.message; update(); }); }, 1500);
-  context.subscriptions.push({ dispose() { disposed = true; clearInterval(interval); documents.clear(); documentTargets.clear(); } });
+  context.subscriptions.push({ dispose() { clearSectionDecoration(); disposed = true; clearInterval(interval); documents.clear(); documentTargets.clear(); } });
   void refresh(true).catch(showError);
   return { getCommandViewState: () => commandCenter.getState(), getState: state, getConversationState: () => structuredClone({activeConversationId,conversation:activeConversation()}), getWebviewState: () => structuredClone(webviewState()), conversationAction: handleConversationMessage, refresh: () => refresh(true) };
 }

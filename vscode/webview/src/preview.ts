@@ -75,6 +75,10 @@ export function createPreview():PairAdapter {
     if(message.action==='webview-ready'||message.action==='conversation-ready') {publish();return;}
     if(message.action==='conversation-back'){current.activeConversationId=undefined;publish();return;}
     if(message.action==='session')return;
+    if(message.action==='section-hover'||message.action==='section-reveal'){
+      if(message.action==='section-reveal'&&sameDecision(current.review,message.identity)&&Number.isInteger(message.index)&&current.review?.changes[message.index!]?.annotations?.[Number(message.annotationIndex)]){current.selectedIndex=message.index!;publish();}
+      return;
+    }
     if(!sameDecision(current.review,message.identity)) {failure(message.conversationId,'This step changed. Open the current action to continue.');return;}
     if(message.action==='open-action'){current.selectedIndex=Number(message.index)||0;publish();return;}
     if(message.action==='conversation-open-action'||message.action==='conversation-preview')return;

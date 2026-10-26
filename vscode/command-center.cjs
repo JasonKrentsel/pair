@@ -4,22 +4,55 @@ const { commandMarkup, commandCss, outputMarkup, outputScript } = require('./com
 const { markdown } = require('./markdown.cjs');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 
+const commandCenterCss = `
+  *{box-sizing:border-box}html,body{height:100%;margin:0}
+  body{padding:20px 24px;color:var(--vscode-editor-foreground,#ddd);background:var(--vscode-editor-background,#1e1e1e);font:14px/1.6 var(--vscode-font-family,system-ui,sans-serif);display:flex;flex-direction:column;gap:16px;overflow:hidden}
+  header{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-shrink:0;min-width:0}
+  .command-title{min-width:0}.title-row{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}h1{font-size:16px;line-height:1.4;margin:0;font-weight:600}.shell-name{font-size:12px;color:var(--vscode-editor-foreground,#ddd)}
+  .step-name{font-size:12px;margin:4px 0 0;color:var(--vscode-descriptionForeground,#bbb);overflow-wrap:anywhere;max-width:110ch}
+  .muted{color:var(--vscode-descriptionForeground,#bbb)}
+  button{font:12px/1.4 var(--vscode-font-family,system-ui,sans-serif);color:var(--vscode-button-secondaryForeground,var(--vscode-editor-foreground,#ddd));background:var(--vscode-button-secondaryBackground,transparent);border:1px solid var(--vscode-panel-border,#444);border-radius:6px;padding:6px 10px;min-height:30px;cursor:pointer;white-space:nowrap;transition:background-color 120ms,border-color 120ms}
+  button:hover{background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground,#2a2a2a))}button:disabled{opacity:.5;cursor:default}button[hidden]{display:none}button:focus-visible,pre:focus-visible{outline:2px solid var(--vscode-focusBorder,#007fd4);outline-offset:2px}
+  .overview{flex:0 1 auto;max-height:43vh;overflow:auto;min-height:0;scrollbar-gutter:stable}
+  .why{max-width:100ch;color:var(--vscode-editor-foreground,#ddd);font-size:14px;line-height:1.65}.why p{margin:0 0 8px}.why p:last-child{margin-bottom:0}.why code{color:var(--vscode-textPreformat-foreground,var(--vscode-editor-foreground,#ddd));font-family:var(--vscode-editor-font-family,monospace);font-size:.93em}
+  .command-context{margin:12px 0 16px;font-size:12px;line-height:1.55}.command-context>div{display:flex;gap:12px;align-items:baseline;min-width:0}.command-context dt{color:var(--vscode-descriptionForeground,#bbb);flex:none}.command-context dd{margin:0;min-width:0;overflow-wrap:anywhere;color:var(--vscode-editor-foreground,#ddd)}.command-context code{font:12px/1.55 var(--vscode-editor-font-family,monospace)}
+  .source-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px;font-size:12px}.source-toolbar strong{font-weight:600}.source-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.source-actions button{min-height:28px;padding:4px 8px}.source-hint{color:var(--vscode-descriptionForeground,#bbb);font-size:11px}
+  pre{margin:0;tab-size:4;font:13px/1.65 var(--vscode-editor-font-family,monospace)}pre code{font:inherit;background:transparent}
+  .exact-command{padding:12px 16px;max-height:24vh;overflow:auto;background:var(--vscode-textCodeBlock-background,#252525);border:1px solid var(--vscode-panel-border,#444);border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere}
+  .exact-command code{display:block;padding-left:2ch;text-indent:-2ch;white-space:inherit;overflow-wrap:inherit}.exact-command.multiline code{padding-left:0;text-indent:0}.exact-command.no-wrap{white-space:pre;overflow-wrap:normal}.exact-command.no-wrap code{padding-left:0;text-indent:0}
+  .terminal-box,.command-output{display:flex;flex-direction:column;flex:1 1 0;min-height:120px;border:1px solid var(--vscode-panel-border,#444);border-radius:6px;overflow:hidden;margin:0}
+  .toolbar,.output-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border-bottom:1px solid var(--vscode-panel-border,#444);flex-shrink:0;font-size:12px}.toolbar strong,.output-heading strong{font-weight:600}.buttons{display:flex;align-items:center;gap:8px}
+  #terminal{flex:1;min-height:0;padding:12px 16px;overflow:hidden}.command-output pre{flex:1;min-height:0;max-height:none;overflow:auto;padding:12px 16px;white-space:pre-wrap;overflow-wrap:anywhere}
+  .terminal-footer,.output-note{padding:8px 12px;border-top:1px solid var(--vscode-panel-border,#444);flex-shrink:0;font-size:12px;line-height:1.5;color:var(--vscode-descriptionForeground,#bbb)}#input-status{color:var(--vscode-editor-foreground,#ddd)}#output-note:empty{display:none}
+  #connection{font-size:12px;line-height:1.5;flex-shrink:0;color:var(--vscode-descriptionForeground,#bbb)}
+  .hljs-keyword,.hljs-built_in,.hljs-selector-tag{color:var(--vscode-symbolIcon-keywordForeground,#c586c0)}.hljs-string,.hljs-regexp{color:var(--vscode-debugTokenExpression-string,#ce9178)}.hljs-variable,.hljs-template-variable,.hljs-params{color:var(--vscode-debugTokenExpression-name,#9cdcfe)}.hljs-number,.hljs-literal{color:var(--vscode-debugTokenExpression-number,#b5cea8)}.hljs-comment{color:var(--vscode-descriptionForeground,#bbb);font-style:italic}.hljs-title,.hljs-function{color:var(--vscode-symbolIcon-functionForeground,#dcdcaa)}
+  @media(max-width:640px){body{padding:12px;gap:12px}header{gap:8px}.overview{max-height:48vh}.source-toolbar{align-items:flex-start}.source-hint{display:none}.source-actions{justify-content:flex-end;gap:4px}.command-context>div{display:block}.command-context dt{margin-bottom:2px}#terminal{padding:8px}.toolbar,.output-heading{padding:8px;gap:8px}}
+  @media(prefers-reduced-motion:reduce){button{transition:none}}
+  @media(forced-colors:active){button,.exact-command,.terminal-box,.command-output{border-color:CanvasText}}
+`;
+
+function commandHeader(snapshot,index) {
+  const change=snapshot.changes[index];
+  return `<header><div class="command-title"><div class="title-row"><h1>Command</h1><span class="shell-name">${esc(change.kind)} · Action ${index+1} of ${snapshot.changes.length}${change.interactive?' · Interactive':''}</span></div><p class="step-name">Step: ${esc(snapshot.title)}</p></div><button id="source">Open source</button></header>`;
+}
+
+function commandOverview(snapshot,index,root,highlighted) {
+  const change=snapshot.changes[index];
+  const source=highlighted?`<pre id="command-source" class="exact-command${/[\r\n]/.test(change.command)?' multiline':''}" tabindex="0" aria-label="Exact command"><code id="command-code" class="language-${/powershell/i.test(change.kind)?'powershell':'bash'}">${esc(change.command)}</code></pre>`:commandMarkup(change.command);
+  return `<section class="overview" aria-label="Command details"><div class="why">${markdown(change.why||snapshot.why)}</div><dl class="command-context"><div><dt>Directory</dt><dd><code>${esc(change.cwd||root)}</code></dd></div></dl><div class="source-toolbar"><strong>Exact command</strong><div class="source-actions"><span id="source-hint" class="source-hint">Wrapped for reading</span><button id="wrap" aria-pressed="true" aria-controls="command-source">Wrap lines</button><button id="copy" aria-live="polite" title="Copy the exact command with its original line breaks">Copy command</button></div></div>${source}</section>`;
+}
+
 function renderCommandCenter(snapshot, index, root, progress, connected, assets) {
   const change = snapshot.changes[index], nonce = crypto.randomBytes(16).toString('hex');
   const initial = progress || { status: 'Not run', text: 'This command has not run. Approve the step in the Pair sidebar when ready.', truncated: false };
   const identity = JSON.stringify({ reviewId: snapshot.id }).replace(/</g,'\\u003c');
   if (assets) return renderTerminal(snapshot,index,root,initial,connected,assets,nonce);
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'"><style nonce="${nonce}">
-  ${commandCss}
-  *{box-sizing:border-box}html,body{height:100%;margin:0}body{padding:20px 28px;color:var(--vscode-editor-foreground);background:var(--vscode-editor-background);font:var(--vscode-font-size)/1.5 var(--vscode-font-family);display:flex;flex-direction:column;gap:14px;overflow:hidden}
-  header{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-shrink:0}h1{font-size:1.25em;margin:0}h2{font-size:1em;margin:0 0 6px}.muted{color:var(--vscode-descriptionForeground)}button{font:inherit;color:var(--vscode-button-secondaryForeground);background:var(--vscode-button-secondaryBackground);border:1px solid var(--vscode-panel-border);border-radius:4px;padding:6px 12px;cursor:pointer}button:hover{background:var(--vscode-button-secondaryHoverBackground)}button:focus-visible,pre:focus-visible{outline:1px solid var(--vscode-focusBorder)}
-  .overview{flex:0 1 auto;max-height:44vh;overflow:auto}.why{max-width:100ch}.why p{margin:0 0 10px}.cwd{overflow-wrap:anywhere;margin-bottom:8px}.command-source{margin:0;background:var(--vscode-textCodeBlock-background);font:var(--vscode-editor-font-size)/1.6 var(--vscode-editor-font-family);max-height:28vh}
-  .command-output{display:flex;flex-direction:column;flex:1 1 0;min-height:100px;margin:0}.command-output pre{flex:1;min-height:0;max-height:none;overflow:auto;margin:0;padding:14px 18px;background:var(--vscode-textCodeBlock-background);font:var(--vscode-editor-font-size)/1.6 var(--vscode-editor-font-family);overflow-wrap:anywhere}.output-heading{padding:8px 14px;flex-shrink:0}.output-note{flex-shrink:0}#connection{font-size:.9em;min-height:1.5em;flex-shrink:0}code{font-family:var(--vscode-editor-font-family)}
-  @media(max-width:600px){body{padding:12px;gap:10px}header{align-items:flex-start}header button{max-width:160px}.overview{max-height:48vh}}
-  </style></head><body><header><div><div class="muted">Action ${index+1} of ${snapshot.changes.length} · ${esc(change.kind)}</div><h1>${esc(snapshot.title)}</h1></div><button id="source">Open command source</button></header>
-  <section class="overview"><h2>Why this command runs</h2><div class="why">${markdown(change.why || snapshot.why)}</div><div class="cwd muted">Working directory · ${esc(change.cwd || root)}</div>${commandMarkup(change.command)}</section>
+  ${commandCss}${commandCenterCss}
+  </style></head><body>${commandHeader(snapshot,index)}
+  ${commandOverview(snapshot,index,root,false)}
   ${outputMarkup(index, initial)}<div id="connection" class="muted">${connected ? 'Approvals and step navigation are in the Pair sidebar.' : 'Disconnected · showing the last recorded output.'}</div>
-  <script nonce="${nonce}">const api=acquireVsCodeApi();const identity=${identity};${outputScript}document.getElementById('source').addEventListener('click',()=>api.postMessage({action:'source'}));window.addEventListener('message',event=>{if(event.data?.type==='connection')document.getElementById('connection').textContent=event.data.text;});</script></body></html>`;
+  <script nonce="${nonce}">const api=acquireVsCodeApi();const identity=${identity};${outputScript}document.getElementById('source').addEventListener('click',()=>api.postMessage({action:'source'}));document.getElementById('copy').addEventListener('click',()=>api.postMessage({action:'copy'}));document.getElementById('wrap').addEventListener('click',event=>{const wrapped=event.currentTarget.getAttribute('aria-pressed')!=='true';event.currentTarget.setAttribute('aria-pressed',String(wrapped));document.getElementById('command-source').classList.toggle('no-wrap',!wrapped);document.getElementById('source-hint').textContent=wrapped?'Wrapped for reading':'Original line breaks';});window.addEventListener('message',event=>{if(event.data?.type==='connection')document.getElementById('connection').textContent=event.data.text;if(event.data?.type==='command-copied')document.getElementById('copy').textContent='Copied';});</script></body></html>`;
 }
 
 function createCommandCenter(vscode, context, options) {
@@ -43,6 +76,7 @@ function createCommandCenter(vscode, context, options) {
       panel.onDidDispose(()=>{if(panel===current){panel=undefined;target=undefined;}},undefined,context.subscriptions);
       panel.webview.onDidReceiveMessage(message=>{
         if(message?.action==='source')void openSource().catch(options.showError);
+        if(message?.action==='copy')void copyCommand().catch(options.showError);
         if(message?.action==='ready'){shownOutput=undefined;terminalSignature=undefined;sync();}
         if(message?.action==='terminal')inputQueue=inputQueue.then(()=>sendTerminal(message)).catch(error=>{void panel?.webview.postMessage({type:'terminal-error',text:error.message});});
       },undefined,context.subscriptions);
@@ -60,6 +94,13 @@ function createCommandCenter(vscode, context, options) {
     if (!target) return;
     if (options.getState().sessionId !== target.sessionId) throw new Error('This command belongs to another Pi session. Open its current review.');
     await options.openNative(target.snapshot,target.index);
+  }
+  async function copyCommand() {
+    const copiedTarget=target,command=copiedTarget?.snapshot.changes[copiedTarget.index]?.command;
+    if(typeof command!=='string')return;
+    if(!vscode.env?.clipboard?.writeText)throw new Error('Clipboard is unavailable. Open the command source to copy it.');
+    await vscode.env.clipboard.writeText(command);
+    if(target===copiedTarget)void panel?.webview.postMessage({type:'command-copied'});
   }
   async function sendTerminal(message){
     const state=options.getState(), t=state.terminal;
@@ -92,9 +133,9 @@ function createCommandCenter(vscode, context, options) {
 module.exports={renderCommandCenter,createCommandCenter};
 
 function renderTerminal(snapshot,index,root,initial,connected,assets,nonce){
-  const change=snapshot.changes[index],json=value=>JSON.stringify(value).replace(/</g,'\\u003c');
+  const json=value=>JSON.stringify(value).replace(/</g,'\\u003c');
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${assets.csp} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${assets.csp};"><link rel="stylesheet" href="${assets['vendor/xterm.css']}"><style>
-  *{box-sizing:border-box}html,body{height:100%;margin:0}body{padding:18px 24px;color:var(--vscode-editor-foreground);background:var(--vscode-editor-background);font:var(--vscode-font-size)/1.5 var(--vscode-font-family);display:flex;flex-direction:column;gap:12px;overflow:hidden}header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-shrink:0}h1{font-size:1.2em;margin:0}.muted,#connection,#input-status{color:var(--vscode-descriptionForeground);font-size:.92em}button{font:inherit;color:var(--vscode-button-secondaryForeground);background:var(--vscode-button-secondaryBackground);border:1px solid var(--vscode-panel-border);padding:5px 10px;border-radius:4px;cursor:pointer}button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:1px solid var(--vscode-focusBorder)}.overview{flex:0 1 auto;max-height:42vh;overflow:auto}.why{max-width:100ch}.why p{margin:0 0 8px}.cwd{overflow-wrap:anywhere;margin:8px 0}pre{margin:0;padding:12px 16px;background:var(--vscode-textCodeBlock-background);white-space:pre-wrap;overflow-wrap:anywhere;tab-size:4;font:var(--vscode-editor-font-size)/1.5 var(--vscode-editor-font-family)}pre code{font:inherit;background:transparent}.terminal-box{display:flex;flex-direction:column;flex:1;min-height:100px;border:1px solid var(--vscode-panel-border);border-radius:4px;overflow:hidden}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 12px;border-bottom:1px solid var(--vscode-panel-border);flex-shrink:0}.buttons{display:flex;gap:8px}#terminal{flex:1;min-height:0;padding:10px 12px;overflow:hidden}.terminal-footer{padding:5px 12px;border-top:1px solid var(--vscode-panel-border);flex-shrink:0}#connection{flex-shrink:0}.hljs-keyword,.hljs-built_in,.hljs-selector-tag{color:var(--vscode-symbolIcon-keywordForeground,#c586c0)}.hljs-string,.hljs-regexp{color:var(--vscode-debugTokenExpression-string,#ce9178)}.hljs-variable,.hljs-template-variable,.hljs-params{color:var(--vscode-debugTokenExpression-name,#9cdcfe)}.hljs-number,.hljs-literal{color:var(--vscode-debugTokenExpression-number,#b5cea8)}.hljs-comment{color:var(--vscode-descriptionForeground);font-style:italic}.hljs-title,.hljs-function{color:var(--vscode-symbolIcon-functionForeground,#dcdcaa)}
-  </style></head><body><header><div><div class="muted">Action ${index+1} of ${snapshot.changes.length} · ${esc(change.kind)}${change.interactive?' · Interactive terminal':''}</div><h1>${esc(snapshot.title)}</h1></div><button id="source">Open command source</button></header><section class="overview"><div class="why">${markdown(change.why||snapshot.why)}</div><div class="muted cwd">Working directory · ${esc(change.cwd||root)}</div><pre><code id="command-code" class="language-${/powershell/i.test(change.kind)?'powershell':'bash'}">${esc(change.command)}</code></pre></section><section class="terminal-box"><div class="toolbar"><strong id="output-status">Output · ${esc(initial.status)}</strong><div class="buttons"><button id="follow" aria-pressed="true">Following</button><button id="stop" disabled>Stop command</button></div></div><div id="terminal" aria-label="Command terminal"></div><div class="terminal-footer"><div id="input-status">Output view</div><div id="output-note" class="muted"></div></div></section><div id="connection">${connected?'Approvals and step navigation are in the Pair sidebar.':'Disconnected · last recorded output.'}</div>
+  ${commandCenterCss}
+  </style></head><body>${commandHeader(snapshot,index)}${commandOverview(snapshot,index,root,true)}<section class="terminal-box" aria-label="Command output"><div class="toolbar"><strong id="output-status">Output · ${esc(initial.status)}</strong><div class="buttons"><button id="follow" aria-pressed="true">Auto-scroll on</button><button id="stop" hidden disabled>Stop command</button></div></div><div id="terminal" aria-label="Command terminal"></div><div class="terminal-footer"><div id="input-status">Command output</div><div id="output-note" class="muted"></div></div></section><div id="connection">${connected?'Review and approve steps in the Pair sidebar.':'Disconnected · last recorded output.'}</div>
   ${['vendor/xterm.js','vendor/addon-fit.js','vendor/highlight.js','vendor/powershell.js'].map(file=>`<script nonce="${nonce}" src="${assets[file]}"></script>`).join('')}<script nonce="${nonce}">const commandIdentity=${json({reviewId:snapshot.id,index})};const initialOutput=${json(initial)};</script><script nonce="${nonce}" src="${assets['terminal-client.js']}"></script></body></html>`;
 }

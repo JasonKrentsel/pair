@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpRight, Check, ChevronDown, CircleCheck, CircleDot, Code2, FileCode2, FileText, GitCompareArrows, Layers3, MessageCircle, MoreHorizontal, ShieldCheck, Square, Terminal, Unplug } from 'lucide-react';
 import * as Collapsible from '@radix-ui/react-collapsible';
-import type { PairState, PairTransport } from './types';
+import type { Annotation, DecisionIdentity, PairState, PairTransport } from './types';
 import { Markdown } from './components/Markdown';
 import { ReplyBody } from './components/ReplyBody';
 import { actionLabel, identityOf, permissionBlocker, reviewStatus, sameIdentity, type LocalState } from './ui-state';
@@ -21,6 +21,32 @@ function Delta({ added = 0, removed = 0 }: { added?: number; removed?: number })
 
 function Notice({ children, tone = 'warning' }: { children: React.ReactNode; tone?: string }) {
   return <div className={`notice ${tone}`} role={tone === 'warning' ? 'alert' : 'status'}>{children}</div>;
+}
+
+function SectionNote({note,index,annotationIndex,identity,transport}:{note:Annotation;index:number;annotationIndex:number;identity:DecisionIdentity;transport:PairTransport}) {
+  const pointed=useRef(false),focused=useRef(false),active=useRef(false);
+  const sendHover=()=>{
+    const next=pointed.current||focused.current;
+    if(next===active.current)return;
+    active.current=next;
+    transport.postMessage({action:'section-hover',identity,index,annotationIndex,active:next});
+  };
+  useEffect(()=>{
+    const clear=()=>{pointed.current=false;focused.current=false;sendHover();};
+    window.addEventListener('blur',clear);
+    return()=>{window.removeEventListener('blur',clear);clear();};
+  },[identity.reviewId,identity.revision,identity.fingerprint,identity.gate,index,annotationIndex,transport]);
+  const lines=`Lines ${note.startLine}${note.endLine&&note.endLine!==note.startLine?`–${note.endLine}`:''}`;
+  return <section className="section-note"
+    onMouseEnter={()=>{pointed.current=true;sendHover();}}
+    onMouseLeave={()=>{pointed.current=false;sendHover();}}
+    onFocusCapture={()=>{focused.current=true;sendHover();}}
+    onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null)){focused.current=false;sendHover();}}}>
+    <button className="section-target" onClick={()=>transport.postMessage({action:'section-reveal',identity,index,annotationIndex})} aria-label={`Show ${note.title}, ${lines.toLowerCase()}, in the editor`} title="Hover to highlight visible code. Click to reveal these lines.">
+      <span className="section-note-heading"><strong>{note.title}</strong><span className="section-link">{lines}<ArrowUpRight size={12}/></span></span>
+    </button>
+    <Markdown text={note.why}/>
+  </section>;
 }
 
 export default function App({ state, transport }: Props) {
@@ -81,7 +107,7 @@ function Review({ state, transport }: Props) {
     <main ref={main} className="review-scroll" data-testid="step-scroll" onScroll={() => persist()}>
       {review ? <>
         <section className="step-intro">
-          <div className="eyebrow-row"><span className={`status-label ${status.tone}`}><span className="status-dot" />{status.label}</span><span className="revision-label">Step · {changes.length} {changes.length === 1 ? 'action' : 'actions'}</span></div>
+          <div className="step-status-row"><span className={`status-label ${status.tone}`}>{status.label}</span><span className="revision-label">{changes.length} {changes.length === 1 ? 'action' : 'actions'}</span></div>
           <h1>{review.title}</h1>
           {review.why && <Markdown text={review.why} className="step-rationale" />}
           <div className="step-composition">
@@ -115,12 +141,12 @@ function Review({ state, transport }: Props) {
                   {hasDetails ? <Collapsible.Trigger className="quiet-button disclosure"><ChevronDown size={14} />Why this action</Collapsible.Trigger> : <span />}
                   {review.pending && state.conversationAvailable && <button className="chat-action" onClick={() => send('chat-action', index, conversation?.id)} aria-label={`${conversation ? 'Continue chat about' : 'Chat about'} ${label}`}><MessageCircle size={13} />Chat{conversation?.messages.length ? <span className="chat-count">{Math.ceil(conversation.messages.length / 2)}</span> : null}</button>}
                 </div>
-                {hasDetails && <Collapsible.Content className="action-explanation"><div className="explanation-inner">{why && <Markdown text={change.why} />}{change.annotations?.map((note, noteIndex) => <div className="section-note" key={noteIndex}><div className="section-note-heading"><strong>{note.title}</strong><span>Lines {note.startLine}{note.endLine && note.endLine !== note.startLine ? `–${note.endLine}` : ''}</span></div><Markdown text={note.why} /></div>)}</div></Collapsible.Content>}
+                {hasDetails && <Collapsible.Content className="action-explanation"><div className="explanation-inner">{why && <Markdown text={change.why} />}{!!change.annotations?.length&&<p className="section-help">Hover to highlight code · Click a section to reveal it</p>}{change.annotations?.map((note, noteIndex) => <SectionNote key={noteIndex} note={note} index={index} annotationIndex={noteIndex} identity={identityOf(review)!} transport={transport}/>)}</div></Collapsible.Content>}
               </Collapsible.Root>}
             </li>;
           })}
         </ol>
-      </> : <section className="empty-step"><div className="empty-symbol">{state.connected ? <Layers3 size={27} /> : <Unplug size={27} />}</div><div className="eyebrow">{state.connected ? 'All set' : 'Pair for Pi'}</div><h1>{status.title}</h1><p>{state.connected ? 'Proposed edits and commands will appear here, ready for you to review.' : 'Open the same project in Pi and VS Code, then enable Pair in Pi.'}</p>{!state.connected && <button className="button secondary" onClick={() => send('session')}>Connect to Pi<ArrowUpRight size={14} /></button>}</section>}
+      </> : <section className="empty-step"><div className="empty-symbol">{state.connected ? <Layers3 size={27} /> : <Unplug size={27} />}</div><h1>{status.title}</h1><p>{state.connected ? 'Proposed edits and commands will appear here, ready for you to review.' : 'Open the same project in Pi and VS Code, then enable Pair in Pi.'}</p>{!state.connected && <button className="button secondary" onClick={() => send('session')}>Connect to Pi<ArrowUpRight size={14} /></button>}</section>}
     </main>
     <footer className={`decision-footer ${review?.pending ? '' : 'quiet-footer'}`}>
       {blocker && <Notice>{blocker}</Notice>}
@@ -235,13 +261,13 @@ function Chat({ state, transport, conversation }: Props & { conversation: Conver
 
   return <>
     <header className="chat-header">
-      <div className="chat-navigation"><button className="back-button" onClick={() => sendAction('conversation-back')}><ArrowLeft size={14} />Back to step</button><span className="eyebrow">Chat</span></div>
+      <div className="chat-navigation"><button className="back-button" onClick={() => sendAction('conversation-back')}><ArrowLeft size={14} />Back to step</button></div>
       <div className="chat-target"><span className="action-symbol">{change ? <ActionIcon change={change} /> : <Code2 size={16} />}</span><div><h1 title={change?.label || label}>{label}</h1><p>Action {conversation.index + 1} of {review?.changes.length || 1}<span className="meta-separator">·</span><span>{selectedLines ? `Lines ${scope.startLine}${scope.endLine && scope.endLine !== scope.startLine ? `–${scope.endLine}` : ''}` : 'Whole action'}</span></p></div><button className="icon-button" title="Open in editor" aria-label="Open this action in the editor" onClick={() => sendAction('conversation-open-action')}><ArrowUpRight size={17} /></button></div>
       {excerpt && <Collapsible.Root open={scopeOpen} onOpenChange={setScopeOpen} className="source-context"><Collapsible.Trigger className="quiet-button disclosure"><ChevronDown size={13} />Selected code<span className="line-count">{excerpt.split('\n').length} lines</span></Collapsible.Trigger><Collapsible.Content><pre tabIndex={0}><code>{excerpt}</code></pre></Collapsible.Content></Collapsible.Root>}
     </header>
     <div className="transcript-container">
       <main ref={transcript} className="chat-scroll" data-testid="chat-scroll" aria-label="Conversation about this action" onScroll={scroll}>
-        {!messages.length ? <section className="empty-chat"><div className="empty-symbol"><MessageCircle size={25} /></div><h2>Work through this part.</h2><p>Ask why it works this way, or describe a small change.</p><div className="prompt-suggestions"><button onClick={() => fillPrompt('Explain how this works and what stays unchanged.')}><MessageCircle size={14} />Explain this {command ? 'command' : 'change'}<ArrowUpRight size={12} /></button><button onClick={() => fillPrompt('Could this be simpler while keeping the same behavior?')}><Code2 size={14} />Explore a simpler approach<ArrowUpRight size={12} /></button></div><p className="empty-chat-note">Only this action is in scope. Nothing runs from chat.</p></section>
+        {!messages.length ? <section className="empty-chat"><h2>Discuss {selectedLines ? 'these lines' : command ? 'this command' : 'this action'}</h2><p>Ask a question or request a small revision.</p><div className="prompt-suggestions"><button onClick={() => fillPrompt('Explain how this works and what stays unchanged.')}><MessageCircle size={14} />Explain this {command ? 'command' : 'change'}<ArrowUpRight size={12} /></button><button onClick={() => fillPrompt('Could this be simpler while keeping the same behavior?')}><Code2 size={14} />Explore a simpler approach<ArrowUpRight size={12} /></button></div><p className="empty-chat-note">A revision still needs your approval.</p></section>
           : <div className="messages">{messages.map((message, index) => {
             const isLast=index===messages.length-1;
             const legacyEmpty=message.role==='assistant'&&!message.text.trim()&&!message.error&&!message.reasoning&&!message.toolCalls?.length&&!(running&&isLast);
@@ -256,7 +282,7 @@ function Chat({ state, transport, conversation }: Props & { conversation: Conver
       {warning && <Notice>{warning}</Notice>}
       <div className="composer-status"><span role="status" aria-live="polite">{running ? <span className="working-dot" /> : adopted ? <CircleCheck size={12} /> : <ShieldCheck size={12} />}{statusText}</span>{running && <button className="quiet-button stop-button" onClick={() => sendAction('conversation-stop')} disabled={!ready}><Square size={11} />Stop</button>}</div>
       {locked ? <button className="button secondary return-button" onClick={() => sendAction('conversation-back')}><ArrowLeft size={14} />Return to step</button> : <form className={`composer ${sending ? 'sending' : ''}`} onSubmit={event => { event.preventDefault(); submit(); }}>
-        <label htmlFor="pair-message" className="sr-only">Message</label><textarea ref={textarea} id="pair-message" name="message" rows={3} value={draft} maxLength={3000} placeholder={command ? 'Ask about this command or suggest a change…' : 'Ask a question or describe a change…'} autoComplete="off" onChange={event => updateDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} aria-describedby="composer-help" />
+        <label htmlFor="pair-message" className="composer-label">Message</label><textarea ref={textarea} id="pair-message" name="message" rows={3} value={draft} maxLength={3000} placeholder={command ? 'Ask about this command…' : selectedLines ? 'Ask about the selected lines…' : 'Ask about this action…'} autoComplete="off" onChange={event => updateDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} aria-describedby="composer-help" />
         <div className="composer-bottom"><span id="composer-help">Enter to send<span className="shortcut-extra"> · Shift+Enter for a new line</span></span><button className="send-button" type="submit" disabled={!ready || running || sending || !draft.trim()} aria-label={sending ? 'Sending message' : 'Send message'}><span>{sending ? 'Sending' : 'Send'}</span><ArrowUp size={15} /></button></div>
       </form>}
     </footer>

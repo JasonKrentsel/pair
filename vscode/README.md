@@ -1,14 +1,14 @@
 # Pair for Pi
 
-Pair 0.11.1 keeps the current step in one React sidebar: an ordered list of actions, their explanations, and an approval footer that stays visible while the content scrolls. Native diffs and the command terminal open in the center editor. The extension preserves your sidebar position, including a right-side layout.
+Pair 0.11.2 keeps the current step in one React sidebar: an ordered list of actions, their explanations, and an approval footer that stays visible while the content scrolls. Neutral selected rows and full-contrast explanation text respect the VS Code theme. Native diffs and the command terminal open in the center editor. The extension preserves your sidebar position, including a right-side layout.
 
 Chat accepts ordinary Markdown. Expand Reasoning to see text supplied by the model, or a tool call to inspect its arguments. Chat does not execute tools: attempted calls are marked Not run. Failed replies show an inline Retry button. Usage shows provider/SDK token counts when available; zero cache tokens do not prove a cache miss. Follow-ups reuse the child context, while sharing the parent's provider cache is not guaranteed.
 
 ## Use
 
-1. Install this companion and reload Pair 0.11.1 in Pi when idle.
+1. Install this companion and reload Pair 0.11.2 in Pi when idle.
 2. Open the same project folder in Pi and VS Code. One matching session connects automatically. Use **Pair: Select Pi Session** if several sessions share the folder.
-3. Select an action to open its native diff or command terminal. Expand **Why this action** for its rationale and any section notes. Use **Next Action in Step** / **Previous Action in Step** to navigate from the editor.
+3. Select an action to open its native diff or command terminal. Expand **Why this action** for its rationale and section notes. Hover a section or focus its heading to highlight its Proposed lines. Click the heading to open and reveal those lines while keeping the sidebar focused; this also works for the current completed step. Use **Next Action in Step** / **Previous Action in Step** to navigate from the editor. Commands include exact-source copying and visual line wrapping.
 4. Choose **Approve step**, **Deny**, or **Deny with note**. Approval covers all listed actions in order, once. A failed or interrupted action stops the remaining actions.
 
 Completed and denied steps keep their diffs and output available without disabled approval buttons. Running steps show progress in the center editor. `pair.openReviewAutomatically` controls automatic focus for new steps; opening a review explicitly from Pi still focuses it.

@@ -4,7 +4,7 @@ Pair adds an explanation and a permission decision to the next coherent step. Re
 
 ## Current status
 
-Version 0.11.1 fixes ordinary Chat replies and adds expandable reasoning, attempted tool calls, provider usage and message-level retry. Normal answers use Markdown; proposed replacements are validated separately. The React/TypeScript sidebar and Vite preview share the same components. Chat starts its child session only on the first Send; navigation does not make model requests.
+Version 0.11.2 improves readability with neutral surfaces, brighter explanations and a clearer command screen. Hover or keyboard-focus an explanation section to highlight its lines in the open Proposed editor; click its heading to open and reveal them. Chat includes Markdown replies, reasoning, attempted tool calls, usage and retry. Navigation and section highlighting stay local and do not make model requests.
 
 ## Everyday use
 
