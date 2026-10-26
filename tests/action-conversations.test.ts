@@ -213,6 +213,33 @@ test("bridge closure aborts child work and cannot leave the parent permission wa
   } finally { await f.close(); }
 });
 
+test("failed replies retain activity and retry only the latest failed prompt without consuming another turn", async () => {
+  let calls=0;
+  const f=await fixture(async (_text,options)=>{
+    calls++;
+    options.onDetails?.({reasoning:'Compare the two database terms.',toolCalls:[{id:'one',name:'read',arguments:'{"path":"schema.py"}',status:'not-run'}],usage:{input:20,output:10,cacheRead:100}});
+    if(calls===1)throw new Error('The reply was interrupted.');
+    return {text:'DDL defines schema; a dialect is a SQL variant.'};
+  });
+  try {
+    const before=f.bridge.current!,thread=await f.open(1);
+    const send={...thread,action:'send',mode:'chat',text:'What is a DDL and a dialect?',requestId:'first'};
+    await f.post('/conversation',send);
+    await until(async()=>(await f.state()).actionConversations[0].status==='error','failed reply');
+    const failed=(await f.state()).actionConversations[0].messages.at(-1);
+    assert.match(failed.error,/interrupted/);assert.equal(failed.toolCalls[0].status,'not-run');assert.equal(failed.usage.cacheRead,100);
+    assert.equal((await f.post('/conversation',{...send,requestId:'invalid-retry',retryMessageId:'wrong'})).status,409);
+    const retry={...send,requestId:'retry',retryMessageId:failed.id};
+    assert.equal((await f.post('/conversation',retry)).status,200);
+    assert.equal((await f.post('/conversation',retry)).status,200);
+    await until(async()=>(await f.state()).actionConversations[0].status==='ready','retried reply');
+    const threadState=(await f.state()).actionConversations[0];
+    assert.equal(threadState.messages.length,2);assert.equal(threadState.messages[1].error,undefined);
+    assert.equal(threadState.messages[1].requestId,'retry');assert.equal(f.children.length,1);assert.equal(calls,2);
+    assert.deepEqual(f.bridge.current,before);assert.equal(f.executions.length,0);
+  } finally {await f.close();}
+});
+
 
 test("a failed progress renderer cannot separate executable actions from the visible approval identity", async () => {
   const f = await fixture(async () => ({ text: "Change the internal result.", candidate: { content: "  return 'revised';", summary: "Use the revised internal result." } }), value => {

@@ -230,3 +230,27 @@ h1, h2, h3, p { margin: 0; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 @media (forced-colors: active) { .action-card, .button, .composer, .revision-card, .chat-message.user, .prompt-suggestions button { border: 1px solid CanvasText; } .action-card.selected { border: 2px solid Highlight; } }
+/* Model activity stays secondary to the answer, with local disclosure state. */
+.reply-details{margin:10px 0;border:1px solid var(--vscode-widget-border,#454545);border-radius:7px;overflow:hidden;font-size:12px}
+.reply-details summary{display:flex;align-items:center;gap:7px;padding:9px 10px;cursor:pointer;list-style:none;color:var(--vscode-foreground,#ddd);min-width:0}
+.reply-details summary::-webkit-details-marker{display:none}
+.reply-details summary>svg{flex-shrink:0}
+.reply-details summary code{overflow-wrap:anywhere;min-width:0}
+.reply-details[open] summary>svg:first-child{transform:rotate(180deg)}
+.tool-details[open] summary>svg:first-child{transform:none}
+.reply-details summary:focus-visible{outline:1px solid var(--vscode-focusBorder,#007fd4);outline-offset:-2px}
+.reply-detail-content{padding:0 11px 10px;min-width:0}
+.reply-detail-content .prose{font-size:12px;line-height:1.6}
+.reply-detail-content pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--vscode-editor-font-family,monospace);font-size:11px;line-height:1.6;max-height:260px;overflow:auto;padding:8px;background:var(--vscode-textCodeBlock-background,#202020);border-radius:4px}
+.detail-meta,.tool-not-run{margin-left:auto;white-space:nowrap;font-size:11px}
+.tool-not-run{color:var(--vscode-editorWarning-foreground,#d7ba7d)}
+.detail-caption{font-size:11px;line-height:1.55;color:var(--vscode-descriptionForeground,#bbb);margin:8px 0 0}
+.reply-failure{margin:10px 0;padding:11px;border:1px solid var(--vscode-inputValidation-warningBorder,#9d8500);background:color-mix(in srgb,var(--vscode-editorWarning-foreground,#d7ba7d) 8%,var(--pair-bg));color:var(--pair-fg);border-radius:7px;font-size:12px;line-height:1.6}
+.reply-failure strong{font-weight:600}
+.reply-failure p{margin:4px 0 9px}
+.retry-button{width:auto;min-height:30px;padding:4px 10px;font-size:12px}
+.usage-details{border-color:transparent;font-size:11px}
+.usage-details summary{padding-left:0;color:var(--vscode-descriptionForeground,#bbb)}
+.usage-details dl{margin:2px 0;display:grid;gap:5px}
+.usage-details dl>div{display:flex;justify-content:space-between;gap:16px}
+.usage-details dd{margin:0;font-variant-numeric:tabular-nums}

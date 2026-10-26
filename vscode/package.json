@@ -2,7 +2,7 @@
   "name": "pi-pair",
   "displayName": "Pair for Pi",
   "description": "Review exact Pi proposals and approve steps inside your project in VS Code.",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "publisher": "local-pair",
   "license": "UNLICENSED",
   "engines": {

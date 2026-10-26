@@ -71,7 +71,7 @@ test("invalid, out-of-scope and truncated model revisions fail closed and do not
     fauxAssistantMessage('{"text":"Cut off"', { stopReason: "length" }),
     (context) => { retryContext = flattened(context); return fauxAssistantMessage("Use a local string expression."); },
   ]);
-  await assert.rejects(session.ask("malformed attempt", { mode: "revise" }), /usable reply/);
+  await assert.rejects(session.ask("malformed attempt", { mode: "revise" }), /invalid JSON/);
   await assert.rejects(session.ask("unexpected path attempt", { mode: "revise" }), /only the scoped replacement/);
   await assert.rejects(session.ask("whole file attempt", { mode: "revise" }), /whole file instead of the selected lines/);
   await assert.rejects(session.ask("truncated attempt", { mode: "revise" }), /did not finish/);
@@ -83,8 +83,65 @@ test("invalid, out-of-scope and truncated model revisions fail closed and do not
 test("tool calls from the fork never execute and are not accepted as replies", async () => {
   const f = await fixture(), session = f.create();
   f.faux.setResponses([fauxAssistantMessage(fauxToolCall("write", { path: "bad.txt", content: "bad" }), { stopReason: "toolUse" })]);
-  await assert.rejects(session.ask("Explain the function", { mode: "question" }), /did not finish/);
+  await assert.rejects(session.ask("Explain the function", { mode: "question" }), /cannot run tools/);
   assert.equal(f.faux.state.callCount, 1); session.dispose();
+});
+
+test("ordinary Markdown answers work in chat and preserve the child request prefix", async () => {
+  const f=await fixture(), session=f.create(), requests:TranscriptContext[]=[];
+  const answer='**DDL** means Data Definition Language. A dialect is a database-specific SQL variant.\n\n```sql\nCREATE TABLE example (id INTEGER);\n```';
+  f.faux.setResponses([answer,'Hello!'].map(text=>context=>{requests.push(structuredClone(context));return fauxAssistantMessage(text);}));
+  const updates:string[]=[];
+  assert.equal((await session.ask('What is a DDL and a dialect?',{mode:'chat',onUpdate:text=>updates.push(text)})).text,answer);
+  assert.ok(updates.length>1);
+  assert.equal((await session.ask('hello',{mode:'chat'})).text,'Hello!');
+  assert.deepEqual(requests[1].messages.slice(0,requests[0].messages.length),requests[0].messages);
+  session.dispose();
+});
+
+test("Markdown revisions hide their payload while streaming and validate only complete scoped replacements", async () => {
+  const f=await fixture(),session=f.create();
+  const text='Trim the name; preserve the public protocol.',content='  return name.trim();';
+  const raw=text+'\n\n```pair-revision\n'+JSON.stringify({content,summary:'Trim the name.'})+'\n```';
+  f.faux.setResponses([fauxAssistantMessage(raw),fauxAssistantMessage('Explain.\n```pair-revision\n{"content":"x"}\n```'),fauxAssistantMessage('Explain.\n```pair-revision\n{invalid}\n```'),fauxAssistantMessage('Explain.\n```pair-revision\n{"content":"x"}')]);
+  const updates:string[]=[];
+  const result=await session.ask('Trim the name.',{mode:'chat',onUpdate:value=>updates.push(value)});
+  assert.equal(result.text,text);assert.equal(result.candidate?.content,content);
+  assert.ok(updates.every(value=>!value.includes('pair-revision')&&!value.includes(content)),JSON.stringify(updates));
+  for(let i=0;i<3;i++)await assert.rejects(session.ask('Try a revision.',{mode:'chat'}),/scoped replacement|invalid JSON|incomplete/);
+  session.dispose();
+});
+
+test("provider reasoning, blocked tool requests and cache usage reach the UI without signatures or execution", async () => {
+  const f=await fixture(),session=f.create(),before=JSON.stringify(f.parent.getEntries());
+  const details:any[]=[];
+  const answer=fauxAssistantMessage('DDL defines database structure.');
+  answer.content.unshift({type:'thinking',thinking:'Compare the schema terms.',thinkingSignature:'private-signature'});
+  answer.content.unshift({type:'thinking',thinking:'',redacted:true,thinkingSignature:'encrypted-not-displayable'});
+  // Faux estimates its own usage, so inject a reported cache count at its SDK boundary.
+  const stream=f.ctx.modelRegistry.streamSimple.bind(f.ctx.modelRegistry);
+  f.ctx.modelRegistry={streamSimple:async function*(...args:any[]) { for await(const event of stream(...args)) { if(event.type==='done')event.message.usage={...event.message.usage,input:30,output:12,cacheRead:2048,cacheWrite:0}; yield event; } }};
+  f.faux.setResponses([answer,fauxAssistantMessage(fauxToolCall('bash',{command:'do not execute'},{id:'blocked-1'}),{stopReason:'toolUse'})]);
+  await session.ask('Explain DDL',{mode:'chat',onDetails:value=>details.push(structuredClone(value))});
+  assert.ok(details.some(value=>value.reasoning==='Compare the schema terms.'));
+  assert.equal(details.at(-1).usage.cacheRead,2048);
+  assert.equal(details.at(-1).reasoningRedacted,true);
+  assert.doesNotMatch(JSON.stringify(details),/private-signature|encrypted|not-displayable/);
+  await assert.rejects(session.ask('Explain this command',{mode:'chat',onDetails:value=>details.push(structuredClone(value))}),/cannot run tools/);
+  assert.equal(details.at(-1).toolCalls[0].status,'not-run');
+  assert.equal(details.at(-1).toolCalls[0].name,'bash');
+  assert.equal(JSON.stringify(f.parent.getEntries()),before);
+  session.dispose();
+});
+
+test("a malformed response is diagnosable and repeated failures do not consume successful chat turns", async () => {
+  const f=await fixture(),session=f.create(),details:any[]=[];
+  const bad='{"text":"Explanation","candidate":';
+  f.faux.setResponses([...Array.from({length:9},()=>fauxAssistantMessage(bad)),fauxAssistantMessage('A valid Markdown answer.')]);
+  for(let i=0;i<9;i++)await assert.rejects(session.ask('Try again',{mode:'chat',onDetails:value=>details.push(value)}),/invalid JSON/);
+  assert.equal(details.at(-1).rawResponse,bad);
+  assert.equal((await session.ask('Explain',{mode:'chat'})).text,'A valid Markdown answer.');
+  session.dispose();
 });
 
 test("cancellation and disposal stop child requests without touching the parent", async () => {

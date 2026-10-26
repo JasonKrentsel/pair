@@ -390,6 +390,7 @@ function activate(context) {
     if(action==='send') {
       if(message.mode !== 'chat'||typeof message.text!=='string'||!message.text.trim()||message.text.length>3000||typeof message.requestId!=='string')throw new Error('Enter a message of up to 3,000 characters.');
       Object.assign(body,{mode:message.mode,text:message.text.trim(),requestId:message.requestId});
+      if(typeof message.retryMessageId==='string')body.retryMessageId=message.retryMessageId;
     }
     if(action==='adopt'||action==='discard') {
       if(typeof message.candidateId!=='string'||conversation.candidate?.id!==message.candidateId)throw new Error('That suggested revision changed. Inspect its current diff first.');

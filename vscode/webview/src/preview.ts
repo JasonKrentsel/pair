@@ -22,10 +22,15 @@ function fixture(scenario:string):PairState {
   if(scenario==='disconnected') {state.connected=false;state.canDecide=false;state.canApprove=false;state.conversationAvailable=false;state.errorMessage='Pi is disconnected. Start Pi in this folder or use /pair code.';}
   if(scenario==='running') {state.review!.pending=false;state.review!.status='Applying 2 of 3';state.review!.changes[0].status='Applied';state.review!.changes[1].status='Running';state.canDecide=false;state.canApprove=false;state.conversationAvailable=false;}
   if(scenario==='completed') {state.review!.pending=false;state.review!.status='Applied';state.review!.changes.forEach(change=>{change.status='Applied';});state.canDecide=false;state.canApprove=false;state.conversationAvailable=false;}
-  if(['chat','candidate','error'].includes(scenario)) {
+  if(['chat','candidate','error','activity'].includes(scenario)) {
     const thread:Conversation={...identityOf(state.review!),id:'preview-chat-0',index:0,startLine:2,endLine:3,status:'ready',messages:[{role:'user',text:'Why is this change safe for the protocol?'},{role:'assistant',text:answer}]};
     if(scenario==='candidate') {thread.messages.push({role:'user',text:'Trim the whitespace first. Keep the fallback and protocol unchanged.'},{role:'assistant',text:'Trim the name before choosing the fallback. Only these two lines change; the surrounding function and other actions stay the same.'});thread.candidate=candidate(thread,changes[0]);}
     if(scenario==='error') {thread.status='error';thread.error='The model did not finish a usable reply. Try the message again.';}
+    if(scenario==='activity') {
+      thread.messages=[{role:'user',text:'What is a DDL and a dialect?'},{id:'reply-1',role:'assistant',text:'**DDL** means Data Definition Language: SQL statements such as `CREATE TABLE`. A **dialect** is the SQL syntax and features specific to a database, such as PostgreSQL or SQLite.',reasoning:'Compare the terms using the proposed SQLAlchemy command. No database connection is needed to explain them.',usage:{input:240,output:82,cacheRead:4096,cacheWrite:0}},
+        {role:'user',text:'Can you explain the command?'},{id:'reply-2',role:'assistant',text:'',reasoning:'The command compiles table definitions for two databases.',toolCalls:[{id:'call-1',name:'read',arguments:JSON.stringify({path:'src/database/schema.py'},null,2),status:'not-run'}],error:'The model requested a tool. Chat cannot run tools; no tool was run. Retry to ask for an explanation or a suggested revision.',usage:{input:300,output:25,cacheRead:0,cacheWrite:0}}];
+      thread.status='error';thread.error=thread.messages.at(-1)!.error;
+    }
     state.actionConversations=[thread];state.activeConversationId=thread.id;
   }
   return state;
@@ -90,7 +95,8 @@ export function createPreview():PairAdapter {
     if(message.action==='conversation-send'){
       const text=message.text?.trim();if(!text||text.length>3000||thread.status==='running'||!sameDecision(current.review,thread))return;
       if(query.get('sendError')==='1'){failure(thread.id,'Connection interrupted. Your draft is safe; try again.');return;}
-      forks.add(thread.id);requests++;thread.status='running';thread.error=undefined;thread.messages.push({role:'user',text},{role:'assistant',text:''});publish();scheduleReply(thread.id,text);return;
+      if(message.retryMessageId) {if(thread.messages.at(-1)?.id!==message.retryMessageId||!thread.messages.at(-1)?.error)return;thread.messages.splice(-2);}
+      forks.add(thread.id);requests++;thread.status='running';thread.error=undefined;thread.messages.push({role:'user',text},{id:`generated-reply-${requests}`,requestId:message.requestId,role:'assistant',text:''});publish();scheduleReply(thread.id,text);return;
     }
     if(message.action==='conversation-stop'){thread.status='ready';if(!thread.messages.at(-1)?.text)thread.messages.at(-1)!.text='Reply stopped. The proposed step is unchanged.';publish();return;}
     if(message.action==='conversation-discard'){thread.candidate=undefined;publish();return;}

@@ -4,7 +4,7 @@ Pair adds an explanation and a permission decision to the next coherent step. Re
 
 ## Current status
 
-Version 0.11.0 rebuilds the VS Code sidebar and Chat with React, TypeScript and Vite. The shared browser preview makes visual iteration fast while the installed companion keeps native diffs, terminal output and exact step approval. Chat still starts its child session only on the first Send. Review Desk, checkpoints and pinned constraints remain removed.
+Version 0.11.1 fixes ordinary Chat replies and adds expandable reasoning, attempted tool calls, provider usage and message-level retry. Normal answers use Markdown; proposed replacements are validated separately. The React/TypeScript sidebar and Vite preview share the same components. Chat starts its child session only on the first Send; navigation does not make model requests.
 
 ## Everyday use
 

@@ -6,11 +6,17 @@ export interface Change {
 }
 export interface Review { id: string; revision: number; fingerprint: string; gate?: number; title: string; why?: string; changes: Change[]; pending: boolean; status: string }
 export interface Candidate { id: string; summary: string; added?: number; removed?: number; original: Change; preview: Change }
+export interface ChatMessage {
+  id?:string; requestId?:string; role:'user'|'assistant'; text:string; error?:string; stopped?:boolean;
+  reasoning?:string; reasoningRedacted?:boolean; rawResponse?:string;
+  toolCalls?:{id:string;name:string;arguments:string;status:'not-run'}[];
+  usage?:{input?:number;output?:number;cacheRead?:number;cacheWrite?:number;reasoning?:number};
+}
 export interface Conversation extends DecisionIdentity {
   id: string; index: number; identity?: DecisionIdentity; startLine?: number; endLine?: number;
   scope?: {startLine?:number;endLine?:number;excerpt?:string};
   status: 'idle'|'running'|'ready'|'error'|'closed'|'stale';
-  messages: {id?:string;role:'user'|'assistant';text:string}[]; candidate?: Candidate; error?: string;
+  messages: ChatMessage[]; candidate?: Candidate; error?: string;
 }
 export interface PairState {
   version: string; session?: {sessionId:string;root:string}; sessionsCount: number;

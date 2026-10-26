@@ -122,7 +122,29 @@ test('suggestions only fill the composer and blocked approval remains disabled',
   await expect(page.getByRole('button',{name:'Deny',exact:true})).toBeEnabled();
 });
 
-for(const theme of ['dark','light'])for(const scenario of ['pending','chat','candidate','disconnected']){
+test('reasoning and tool activity expand locally, and Retry replaces the failed reply without losing a draft',async({page})=>{
+  await preview(page,'activity');
+  await expect(page.getByText('DDL means Data Definition Language:',{exact:false})).toBeVisible();
+  await expect(page.getByText('Reply interrupted',{exact:true})).toHaveCount(1);
+  await expect(page.locator('.chat-footer')).not.toContainText('The model requested a tool');
+  await page.locator('.reasoning-details summary').last().click();
+  await expect(page.getByText('The command compiles table definitions for two databases.')).toBeVisible();
+  await page.locator('.tool-details summary').click();await expect(page.getByText('"src/database/schema.py"',{exact:false})).toBeVisible();
+  await expect(page.getByText('Not run',{exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>window.__PAIR_PREVIEW__!.requests)).toBe(0);
+  await input(page).fill('Keep this draft while retrying.');
+  await page.getByRole('button',{name:'Retry reply',exact:true}).click();
+  await expect.poll(() => page.evaluate(()=>window.__PAIR_PREVIEW__!.state.actionConversations[0].status)).toBe('ready');
+  await expect(page.getByText('Reply interrupted',{exact:true})).toHaveCount(0);
+  await expect(input(page)).toHaveValue('Keep this draft while retrying.');
+  await expect(send(page)).toBeEnabled();
+  expect((await state(page)).actionConversations[0].messages).toHaveLength(4);
+  const sent=(await messages(page)).find(message=>message.action==='conversation-send')!;
+  expect(sent.retryMessageId).toBe('reply-2');expect(sent.text).toBe('Can you explain the command?');
+  expect((await state(page)).review!.pending).toBe(true);
+});
+
+for(const theme of ['dark','light'])for(const scenario of ['pending','chat','candidate','disconnected','activity']){
   test(`accessible ${theme} ${scenario}`,async({page})=>{
     await preview(page,scenario,theme);await expect(page.locator('#root')).not.toBeEmpty();
     const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
@@ -130,9 +152,10 @@ for(const theme of ['dark','light'])for(const scenario of ['pending','chat','can
   });
 }
 
-for(const width of [300,380,520])for(const scenario of ['pending','chat','candidate','command']){
+for(const width of [300,380,520])for(const scenario of ['pending','chat','candidate','command','activity']){
   test(`visual ${scenario} at ${width}px`,async({page},testInfo)=>{
     await page.setViewportSize({width,height:900});await preview(page,scenario);await expect(page.locator('#root')).not.toBeEmpty();
+    if(scenario==='activity'){await page.locator('.reasoning-details summary').last().click();await page.locator('.tool-details summary').click();await page.getByTestId('chat-scroll').evaluate(element=>element.scrollTop=element.scrollHeight);}
     await page.screenshot({path:testInfo.outputPath(`${scenario}-${width}.png`),fullPage:true,animations:'disabled'});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(['pending','command'].includes(scenario))await expect(page.getByRole('button',{name:'Approve step',exact:true})).toBeInViewport();

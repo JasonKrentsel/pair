@@ -3,6 +3,7 @@ import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpRight, Check, ChevronDown, Circle
 import * as Collapsible from '@radix-ui/react-collapsible';
 import type { PairState, PairTransport } from './types';
 import { Markdown } from './components/Markdown';
+import { ReplyBody } from './components/ReplyBody';
 import { actionLabel, identityOf, permissionBlocker, reviewStatus, sameIdentity, type LocalState } from './ui-state';
 import './styles.css';
 
@@ -160,7 +161,7 @@ function Chat({ state, transport, conversation }: Props & { conversation: Conver
   const mounted = useRef(false);
   const messages = conversation.messages || [];
   const excerpt = selectedLines && current ? source.split(/\r\n|\r|\n/).slice((scope.startLine || 1) - 1, scope.endLine || scope.startLine).join('\n') : '';
-  const warning = !state.connected ? 'Reconnect to Pi to continue this chat.' : !state.trusted ? 'Trust this workspace before sending a message or using a revision.' : adopted ? '' : locked ? 'This step changed or finished. Return to the step to review its current version.' : sendError || conversation.error || '';
+  const warning = !state.connected ? 'Reconnect to Pi to continue this chat.' : !state.trusted ? 'Trust this workspace before sending a message or using a revision.' : adopted ? '' : locked ? 'This step changed or finished. Return to the step to review its current version.' : sendError || (!messages.some(message=>message.error===conversation.error) ? conversation.error : '') || '';
   const statusText = adopted ? 'Revision added · Awaiting approval' : locked ? 'Earlier conversation' : sending ? 'Sending…' : running ? 'Pi is responding…' : candidate ? 'Revision ready to inspect' : messages.length ? 'Step still awaits approval' : 'Starts when you send';
 
   const save = () => {
@@ -200,7 +201,7 @@ function Chat({ state, transport, conversation }: Props & { conversation: Conver
       scrollRef.current = transcript.current.scrollTop;
     }
     const request = pending.current;
-    if (sending && request && (running || messages.filter(message => message.role === 'user').length > request.count)) {
+    if (sending && request && (running || messages.some(message=>message.requestId===request.id) || messages.filter(message => message.role === 'user').length > request.count)) {
       setSending(false); pending.current = undefined;
       if (draftRef.current === request.original) updateDraft('');
     }
@@ -211,13 +212,13 @@ function Chat({ state, transport, conversation }: Props & { conversation: Conver
     if (error && (!error.id || error.id === conversation.id)) { setSending(false); setSendError(error.text); }
   }, [state.conversationError?.sequence]);
 
-  const submit = () => {
-    const text = draftRef.current.trim();
+  const submit = (retry?: {text:string;messageId:string}) => {
+    const text = (retry?.text ?? draftRef.current).trim();
     if (!ready || running || sending || !text || text.length > 3000) return;
     const last = pending.current;
-    pending.current = { text, id: last?.text === text ? last.id : crypto.randomUUID(), original: draftRef.current, count: messages.filter(message => message.role === 'user').length };
+    pending.current = { text, id: !retry && last?.text === text ? last.id : crypto.randomUUID(), original: retry ? '' : draftRef.current, count: messages.filter(message => message.role === 'user').length };
     setSending(true); setSendError(''); setFollowing(true); followingRef.current = true; save();
-    transport.postMessage({ action: 'conversation-send', conversationId: conversation.id, identity, index: conversation.index, mode: 'chat', text, requestId: pending.current.id });
+    transport.postMessage({ action: 'conversation-send', conversationId: conversation.id, identity, index: conversation.index, mode: 'chat', text, requestId: pending.current.id, ...(retry ? {retryMessageId:retry.messageId} : {}) });
   };
 
   const scroll = () => {
@@ -241,7 +242,12 @@ function Chat({ state, transport, conversation }: Props & { conversation: Conver
     <div className="transcript-container">
       <main ref={transcript} className="chat-scroll" data-testid="chat-scroll" aria-label="Conversation about this action" onScroll={scroll}>
         {!messages.length ? <section className="empty-chat"><div className="empty-symbol"><MessageCircle size={25} /></div><h2>Work through this part.</h2><p>Ask why it works this way, or describe a small change.</p><div className="prompt-suggestions"><button onClick={() => fillPrompt('Explain how this works and what stays unchanged.')}><MessageCircle size={14} />Explain this {command ? 'command' : 'change'}<ArrowUpRight size={12} /></button><button onClick={() => fillPrompt('Could this be simpler while keeping the same behavior?')}><Code2 size={14} />Explore a simpler approach<ArrowUpRight size={12} /></button></div><p className="empty-chat-note">Only this action is in scope. Nothing runs from chat.</p></section>
-          : <div className="messages">{messages.map((message, index) => <article className={`chat-message ${message.role}`} key={message.id || `${index}:${message.role}`}><div className="message-byline">{message.role === 'assistant' && <span className="pi-mark"><Layers3 size={12} /></span>}<span>{message.role === 'user' ? 'You' : 'Pi'}</span>{running && message.role === 'assistant' && index === messages.length - 1 && <span className="working-dot" />}</div>{running && message.role === 'assistant' && !message.text.trim() ? <div className="thinking-state"><span /><span /><span /><span className="sr-only">Preparing a response</span></div> : <Markdown text={message.text} />}</article>)}</div>}
+          : <div className="messages">{messages.map((message, index) => {
+            const isLast=index===messages.length-1;
+            const legacyEmpty=message.role==='assistant'&&!message.text.trim()&&!message.error&&!message.reasoning&&!message.toolCalls?.length&&!(running&&isLast);
+            const visible=legacyEmpty?{...message,error:isLast&&conversation.error?conversation.error:'No reply was returned.'}:message;
+            return <article className={`chat-message ${message.role}`} key={message.id || `${index}:${message.role}`}><div className="message-byline">{message.role === 'assistant' && <span className="pi-mark"><Layers3 size={12} /></span>}<span>{message.role === 'user' ? 'You' : 'Pi'}</span>{running && message.role === 'assistant' && isLast && <span className="working-dot" />}</div><ReplyBody message={visible} running={running&&isLast} canRetry={ready&&!running&&!sending} retry={isLast&&message.id&&visible.error&&messages[index-1]?.role==='user'?()=>submit({text:messages[index-1].text,messageId:message.id!}):undefined}/></article>;
+          })}</div>}
         {candidate && <section className="revision-card" aria-label="Suggested revision"><div className="revision-heading"><span><GitCompareArrows size={15} />Suggested revision</span><Delta added={candidate.added} removed={candidate.removed} /></div><Markdown text={candidate.summary} /><div className="revision-actions"><button className="button secondary" onClick={() => sendAction('conversation-preview')} disabled={!ready}><GitCompareArrows size={14} />Inspect diff</button><button className="button primary" onClick={() => sendAction('conversation-adopt')} disabled={!ready || running}><Check size={15} />Use revision</button></div><div className="revision-note"><span>Updates the proposal. Approval still required.</span><button className="quiet-button" onClick={() => sendAction('conversation-discard')} disabled={!ready || running}>Discard</button></div></section>}
       </main>
       {!following && messages.length > 0 && <button className="latest-button" onClick={latest}><ArrowDown size={13} />Latest response</button>}

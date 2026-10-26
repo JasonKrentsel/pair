@@ -4,14 +4,14 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { BridgeReview, PairReviewBridge } from "./bridge.ts";
 import type { PreparedChange } from "./changes.ts";
 import type { ChangePreview } from "./review-model.ts";
-import { createActionSession, type ActionSession } from "./action-session.ts";
+import { createActionSession, type ActionSession, type ActionReplyDetails } from "./action-session.ts";
 import { buildActionRevision } from "./action-revisions.ts";
 
 export interface ActionConversation {
   id: string; reviewId: string; revision: number; fingerprint: string; gate?: number;
   index: number; startLine?: number; endLine?: number;
   status: "idle" | "running" | "ready" | "error" | "closed";
-  messages: { role: "user" | "assistant"; text: string }[];
+  messages: ({ id?: string; requestId?: string; role: "user" | "assistant"; text: string; error?: string; stopped?: boolean } & ActionReplyDetails)[];
   candidate?: { id: string; summary: string; added: number; removed: number; original: ChangePreview; preview: ChangePreview };
   error?: string;
 }
@@ -103,7 +103,13 @@ export class ActionConversations {
       return { accepted: true, conversationId: view.id };
     }
     if (view.status === "running") throw new Error("Wait for the current reply, or stop it first.");
-    if (view.messages.length >= 16) throw new Error("This focused conversation has reached eight turns. Request a new step to continue.");
+    if (body.retryMessageId !== undefined) {
+      const last = view.messages.at(-1), prompt = view.messages.at(-2);
+      if (typeof body.retryMessageId !== "string" || !last || last.id !== body.retryMessageId || !last.error || prompt?.role !== "user" || prompt.text !== body.text.trim())
+        throw new Error("Only the latest failed reply can be retried. Send a new message to continue.");
+    }
+    if (view.messages.filter(message => message.role === "assistant" && !message.error && !message.stopped).length >= 8) throw new Error("This focused conversation has reached eight turns. Request a new step to continue.");
+    if ((record.requests?.size ?? 0) >= 64) throw new Error("This chat has reached its retry limit. Open a new conversation to continue.");
     const change = review.changes[view.index];
     // Opening/reopening Chat stores only UI metadata. Capture the parent branch,
     // prompt and current model exactly once, after the first valid Send.
@@ -116,13 +122,15 @@ export class ActionConversations {
     const abort = new AbortController(); record.abort = abort;
     view.status = "running"; view.error = undefined;
     if (mode === "adjust") { view.candidate = undefined; record.candidatePrepared = undefined; record.content = undefined; }
-    view.messages.push({role:"user",text:body.text.trim()},{role:"assistant",text:""});
+    if (body.retryMessageId !== undefined) view.messages.splice(-2);
+    view.messages.push({id:randomUUID(),role:"user",text:body.text.trim()},{id:randomUUID(),requestId:body.requestId,role:"assistant",text:""});
     const reply = view.messages.at(-1)!;
     this.touch();
     void (async () => {
       try {
         const result = await record.session!.ask(body.text.trim(), { mode: mode === "chat" ? "chat" : mode === "ask" ? "question" : "revise", signal: abort.signal,
-          onUpdate: text => { if (!abort.signal.aborted && !this.closed && record.abort === abort) { reply.text = text.slice(-24000); this.touch(); } } });
+          onUpdate: text => { if (!abort.signal.aborted && !this.closed && record.abort === abort) { reply.text = text.slice(0,24000); this.touch(); } },
+          onDetails: details => { if (!abort.signal.aborted && !this.closed && record.abort === abort) { Object.assign(reply, details); this.touch(); } } });
         this.current(body); abort.signal.throwIfAborted();
         reply.text = result.text.slice(0,24000);
         if (result.candidate && mode !== "ask") {
@@ -142,8 +150,8 @@ export class ActionConversations {
       } catch (error) {
         if (this.closed || view.status === "closed") return;
         view.status = abort.signal.aborted ? "ready" : "error";
-        if (!reply.text) reply.text = abort.signal.aborted ? "Reply stopped. The proposed step is unchanged." : "";
-        if (!abort.signal.aborted) view.error = String(error instanceof Error ? error.message : error).slice(0,700);
+        if (abort.signal.aborted) { reply.stopped = true; if (!reply.text) reply.text = "Reply stopped. The proposed step is unchanged."; }
+        else { reply.error = String(error instanceof Error ? error.message : error).slice(0,700); view.error = reply.error; }
       } finally { if (record.abort === abort) record.abort = undefined; this.touch(); }
     })();
     return {accepted:true,conversationId:view.id};

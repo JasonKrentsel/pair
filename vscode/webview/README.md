@@ -11,7 +11,7 @@ npm ci --prefix vscode
 npm --prefix vscode run dev
 ```
 
-Open `http://127.0.0.1:5173/?scenario=pending`. Other scenarios are `chat`, `candidate`, `command`, `running`, `disconnected`, `long`, `error`, and `completed`. Add `&theme=light` for the light palette. Resize the browser to 300, 380, or 520 pixels wide to reproduce a right sidebar.
+Open `http://127.0.0.1:5173/?scenario=pending`. Other scenarios are `chat`, `candidate`, `command`, `running`, `disconnected`, `long`, `error`, `activity`, and `completed`. The activity fixture includes reasoning, a blocked tool call, cache counts and an inline retry. Add `&theme=light` for the light palette. Resize the browser to 300, 380, or 520 pixels wide to reproduce a right sidebar.
 
 The development adapter supplies synthetic state and records UI messages. Its replies are scripted, and its approval controls only change fixture state. It never discovers a Pi session, calls a model, writes project files, or executes commands. The preview adapter and fixture palette are excluded from production builds.
 
