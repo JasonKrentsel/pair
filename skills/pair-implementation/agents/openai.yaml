@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pair Implementation"
+  short_description: "Explain, approve, and review one change at a time"
+  default_prompt: "Use $pair-implementation to explain the next coherent change, wait for my approval, implement and verify it, then stop for review."

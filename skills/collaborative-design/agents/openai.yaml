@@ -1,0 +1,4 @@
+interface:
+  display_name: "Collaborative Design"
+  short_description: "Agree on scope and a compact, reviewable design"
+  default_prompt: "Use $collaborative-design to work through this idea, agree on the change boundary, and write a compact design before implementation."
